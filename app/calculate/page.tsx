@@ -1,0 +1,432 @@
+// app/calculate/page.tsx
+"use client";
+
+import { useState, useRef } from "react";
+
+// โครงสร้างข้อมูลผลลัพธ์
+interface IngredientItem {
+  name: string;
+  weight: number; 
+}
+
+interface NutritionResult {
+  foodName: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  ingredients: IngredientItem[]; 
+}
+
+export default function CalculateVisionPage() {
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  
+  const [originalResult, setOriginalResult] = useState<NutritionResult | null>(null);
+  const [editableResult, setEditableResult] = useState<NutritionResult | null>(null);
+  
+  const [isDragging, setIsDragging] = useState(false);
+  
+  const [manualSearchQuery, setManualSearchQuery] = useState("");
+  const [isSearchingManual, setIsSearchingManual] = useState(false);
+
+  const [newIngredientName, setNewIngredientName] = useState("");
+  const [newIngredientWeight, setNewIngredientWeight] = useState<number | "">("");
+  const [isRecalculating, setIsRecalculating] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      alert("กรุณาอัปโหลดไฟล์รูปภาพเท่านั้นครับ");
+      return;
+    }
+    setImageFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+    setOriginalResult(null); 
+    setEditableResult(null);
+  };
+
+  const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
+  const onDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) handleFileChange(e.dataTransfer.files[0]);
+  };
+
+  const analyzeFoodImage = async () => {
+    if (!imageFile) return;
+
+    setIsAnalyzing(true);
+    setOriginalResult(null);
+    setEditableResult(null);
+
+    try {
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(imageFile);
+        reader.onload = () => {
+          if (typeof reader.result === 'string') resolve(reader.result.split(',')[1]);
+          else reject("Format Error");
+        };
+        reader.onerror = error => reject(error);
+      });
+
+      const response = await fetch('/api/analyze-food', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: base64Data, mimeType: imageFile.type }),
+      });
+
+      if (!response.ok) throw new Error("API ประมวลผลล้มเหลว");
+
+      const rawData = await response.json();
+      
+      const data: NutritionResult = {
+        ...rawData,
+        ingredients: (rawData.ingredients || []).map((ing: string) => ({
+          name: ing,
+          weight: 100 
+        }))
+      };
+
+      setOriginalResult(JSON.parse(JSON.stringify(data)));
+      setEditableResult(JSON.parse(JSON.stringify(data))); 
+
+    } catch (error) {
+      console.error(error);
+      alert("เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleManualSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualSearchQuery.trim()) return;
+    
+    setIsSearchingManual(true);
+    setTimeout(() => {
+      const dummyData: NutritionResult = {
+        foodName: manualSearchQuery,
+        calories: 350,
+        protein: 20,
+        carbs: 45,
+        fat: 10,
+        ingredients: [
+          { name: manualSearchQuery, weight: 150 },
+          { name: "เครื่องปรุงพื้นฐาน", weight: 15 }
+        ]
+      };
+      
+      setOriginalResult(JSON.parse(JSON.stringify(dummyData)));
+      setEditableResult(JSON.parse(JSON.stringify(dummyData)));
+      setPreviewUrl("https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=800&auto=format&fit=crop"); 
+      setIsSearchingManual(false);
+      setManualSearchQuery("");
+    }, 1000);
+  };
+
+  const addIngredient = () => {
+    if (!newIngredientName.trim() || !newIngredientWeight || !editableResult) return;
+    setEditableResult({
+      ...editableResult,
+      ingredients: [
+        ...editableResult.ingredients, 
+        { name: newIngredientName.trim(), weight: Number(newIngredientWeight) }
+      ]
+    });
+    setNewIngredientName("");
+    setNewIngredientWeight("");
+  };
+
+  const removeIngredient = (indexToRemove: number) => {
+    if (!editableResult) return;
+    setEditableResult({
+      ...editableResult,
+      ingredients: editableResult.ingredients.filter((_, index) => index !== indexToRemove)
+    });
+  };
+
+  const updateIngredientWeight = (index: number, newWeight: number) => {
+    if (!editableResult) return;
+    const updatedIngredients = [...editableResult.ingredients];
+    updatedIngredients[index] = { ...updatedIngredients[index], weight: newWeight }; 
+    setEditableResult({ ...editableResult, ingredients: updatedIngredients });
+  };
+
+  const handleRecalculate = () => {
+    if (!editableResult || !originalResult) return;
+    setIsRecalculating(true);
+    
+    setTimeout(() => {
+      const originalTotalWeight = originalResult.ingredients.reduce((sum, ing) => sum + (ing.weight || 0), 0) || 1; 
+      const currentTotalWeight = editableResult.ingredients.reduce((sum, ing) => sum + (ing.weight || 0), 0);
+      
+      const ratio = currentTotalWeight / originalTotalWeight;
+      
+      setEditableResult({
+        ...editableResult,
+        calories: Math.round(originalResult.calories * ratio),
+        protein: Math.round(originalResult.protein * ratio),
+        carbs: Math.round(originalResult.carbs * ratio),
+        fat: Math.round(originalResult.fat * ratio),
+      });
+      
+      setIsRecalculating(false);
+    }, 800);
+  };
+
+  const handleSaveToDiary = () => {
+    if (!editableResult || !originalResult) return;
+    
+    const saveMethod = editableResult.calories !== originalResult.calories ? 'manual_edit' : 'ai_vision';
+    
+    // eslint-disable-next-line react-hooks/purity
+    const currentId = Date.now().toString();
+   
+    const currentTime = new Date().toISOString();
+
+    const newLogEntry = {
+      id: currentId,
+      timestamp: currentTime,
+      foodName: editableResult.foodName,
+      calories: editableResult.calories,
+      protein: editableResult.protein,
+      carbs: editableResult.carbs,
+      fat: editableResult.fat,
+      ingredients: editableResult.ingredients,
+      saveMethod: saveMethod 
+    };
+
+    try {
+      const existingLogs = localStorage.getItem('nutrition_logs');
+      const parsedLogs = existingLogs ? JSON.parse(existingLogs) : [];
+      const updatedLogs = [newLogEntry, ...parsedLogs];
+      
+      localStorage.setItem('nutrition_logs', JSON.stringify(updatedLogs));
+
+      alert(`✅ บันทึกลงสมุดสำเร็จ!\nเพิ่มเมนู "${editableResult.foodName}" (${editableResult.calories} kcal) ลงในประวัติของคุณแล้วครับ`);
+      resetAll();
+    } catch (error) {
+      console.error("Save Error:", error);
+      alert("❌ เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+    }
+  };
+
+  const handleInputChange = (field: keyof NutritionResult, value: string) => {
+    if (editableResult) {
+      setEditableResult({ ...editableResult, [field]: field === 'foodName' ? value : Number(value) });
+    }
+  };
+
+  const resetAll = () => {
+    setImageFile(null);
+    setPreviewUrl(null);
+    setOriginalResult(null);
+    setEditableResult(null);
+    setManualSearchQuery("");
+  };
+
+  return (
+    <div className="min-h-screen bg-[#f8f9fa] font-sans pb-24 flex flex-col items-center">
+      
+      {/* 🌟 Header กลับมาใช้ชื่อเดิมแบบเป๊ะๆ */}
+      <div className="w-full bg-white border-b border-gray-100 pt-16 pb-10 px-4 shadow-[0_10px_30px_rgb(0,0,0,0.02)] text-center relative z-10">
+        <div className="inline-flex items-center gap-2 bg-orange-50 text-[#f26522] px-4 py-1.5 rounded-full font-bold text-sm mb-4 border border-orange-100">
+          <span className="w-2 h-2 rounded-full bg-[#f26522] animate-pulse"></span>
+          AI Vision Food Scanner (Gemini Powered)
+        </div>
+        <h1 className="text-3xl md:text-5xl font-extrabold text-gray-900 mb-2 tracking-tight">
+          แสกนเมนูอาหาร
+        </h1>
+        <h2 className="text-xl md:text-2xl font-bold text-[#f26522] mb-4">
+          รู้แคลอรี่และสารอาหารทันที
+        </h2>
+        <p className="text-gray-500 font-medium mb-6">อัปโหลดรูปภาพหรือถ่ายรูปอาหารของคุณให้ AI วิเคราะห์</p>
+        
+        {/* ช่องค้นหาแบบ Manual เสริมเพิ่มความสะดวก */}
+        <form onSubmit={handleManualSearch} className="max-w-xl mx-auto relative">
+          <input 
+            type="text" 
+            placeholder="หรือค้นหาชื่ออาหารด้วยตัวเอง..." 
+            value={manualSearchQuery}
+            onChange={(e) => setManualSearchQuery(e.target.value)}
+            className="w-full bg-gray-50 border border-gray-200 text-gray-800 text-base rounded-full px-6 py-3.5 pr-28 focus:outline-none focus:ring-2 focus:ring-[#f26522] transition-shadow shadow-sm"
+          />
+          <button type="submit" disabled={isSearchingManual} className="absolute right-1.5 top-1.5 bottom-1.5 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-full px-5 transition-colors text-sm">
+            {isSearchingManual ? "..." : "ค้นหา"}
+          </button>
+        </form>
+      </div>
+
+      <main className="w-full max-w-4xl mx-auto px-4 mt-8">
+        {!previewUrl ? (
+          <div 
+            onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop} onClick={() => fileInputRef.current?.click()}
+            className={`bg-white w-full rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center p-12 text-center cursor-pointer transition-all duration-300 min-h-[350px] shadow-sm
+              ${isDragging ? "border-[#f26522] bg-orange-50 scale-[1.02]" : "border-gray-200 hover:border-[#f26522] hover:bg-gray-50"}
+            `}
+          >
+            <input type="file" ref={fileInputRef} onChange={(e) => e.target.files && handleFileChange(e.target.files[0])} accept="image/*" className="hidden" capture="environment" />
+            <div className="w-20 h-20 bg-orange-100 text-[#f26522] rounded-full flex items-center justify-center text-3xl mb-4 shadow-inner">📸</div>
+            <h3 className="text-2xl font-bold text-gray-800 mb-2">แตะเพื่อถ่ายรูป หรือ ลากไฟล์มาวาง</h3>
+            <p className="text-gray-400 font-medium max-w-sm">รองรับไฟล์ JPG, PNG หรือเปิดกล้องถ่ายสดๆ เพื่อให้ AI ช่วยดูได้เลย</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row gap-8">
+            <div className="w-full md:w-1/2 flex flex-col items-center">
+              <div className="relative w-full aspect-square rounded-3xl overflow-hidden bg-gray-100 shadow-inner border border-gray-100">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                {isAnalyzing && (
+                  <div className="absolute inset-0 bg-[#f26522]/20 flex flex-col items-center justify-center backdrop-blur-[2px]">
+                      <div className="absolute top-0 left-0 w-full h-1 bg-[#f26522] shadow-[0_0_15px_#f26522] animate-[scan_2s_ease-in-out_infinite]"></div>
+                      <div className="w-16 h-16 border-4 border-white border-t-[#f26522] rounded-full animate-spin mb-4 shadow-lg"></div>
+                      <span className="bg-gray-900/80 text-white px-4 py-2 rounded-full font-bold text-sm shadow-md">AI กำลังวิเคราะห์วัตถุดิบ...</span>
+                  </div>
+                )}
+              </div>
+              {!isAnalyzing && !editableResult && (
+                <div className="flex gap-4 mt-6 w-full">
+                  <button onClick={resetAll} className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-colors">เปลี่ยนรูป</button>
+                  <button onClick={analyzeFoodImage} className="flex-1 py-4 bg-[#f26522] hover:bg-orange-600 text-white font-bold rounded-2xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2">
+                    <span>✨</span> วิเคราะห์เลย
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="w-full md:w-1/2 flex flex-col justify-center">
+              {!editableResult && !isAnalyzing && (
+                <div className="h-full flex flex-col items-center justify-center text-gray-400 py-12 text-center">
+                  <span className="text-6xl mb-4 opacity-30">🍽️</span>
+                  <p className="font-medium">กดปุ่ม &quot;วิเคราะห์เลย&quot; <br/>เพื่อดูข้อมูลโภชนาการ</p>
+                </div>
+              )}
+
+              {isAnalyzing && (
+                <div className="h-full flex flex-col items-center justify-center text-[#f26522] py-12 text-center animate-pulse">
+                  <span className="text-4xl mb-4">🧠</span>
+                  <h3 className="font-bold text-xl mb-2">กำลังทำงานอย่างหนัก...</h3>
+                  <p className="text-gray-400 text-sm">Gemini Vision กำลังคำนวณแคลอรี่ให้คุณ</p>
+                </div>
+              )}
+
+              {editableResult && (
+                <div className={`animate-fade-in flex flex-col h-full transition-opacity duration-300 ${isRecalculating ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+                  <div className="mb-4">
+                    <div className="inline-block bg-green-100 text-green-700 text-xs font-bold px-3 py-1 rounded-full mb-3"><span>✏️</span> ปรับแต่งและคำนวณใหม่ได้</div>
+                    <input type="text" value={editableResult.foodName} onChange={(e) => handleInputChange('foodName', e.target.value)} className="text-3xl font-extrabold text-gray-900 mb-1 w-full bg-transparent border-b-2 border-transparent hover:border-gray-300 focus:border-[#f26522] outline-none transition-colors" />
+                    <div className="flex items-end gap-2">
+                      <input type="number" value={editableResult.calories} onChange={(e) => handleInputChange('calories', e.target.value)} className="text-5xl font-black text-[#f26522] bg-transparent border-b-2 border-transparent hover:border-orange-200 focus:border-[#f26522] outline-none transition-colors w-32" />
+                      <span className="text-xl text-gray-500 font-bold mb-1">kcal</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 mb-6">
+                    <div className="bg-blue-50 border border-blue-100 p-3 rounded-2xl flex flex-col items-center transition-all focus-within:ring-2 focus-within:ring-blue-300">
+                      <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1">Protein (g)</p>
+                      <input type="number" value={editableResult.protein} onChange={(e) => handleInputChange('protein', e.target.value)} className="w-full text-xl font-black text-blue-700 bg-transparent text-center outline-none" />
+                    </div>
+                    <div className="bg-green-50 border border-green-100 p-3 rounded-2xl flex flex-col items-center transition-all focus-within:ring-2 focus-within:ring-green-300">
+                      <p className="text-[10px] font-bold text-green-500 uppercase tracking-wider mb-1">Carbs (g)</p>
+                      <input type="number" value={editableResult.carbs} onChange={(e) => handleInputChange('carbs', e.target.value)} className="w-full text-xl font-black text-green-700 bg-transparent text-center outline-none" />
+                    </div>
+                    <div className="bg-yellow-50 border border-yellow-100 p-3 rounded-2xl flex flex-col items-center transition-all focus-within:ring-2 focus-within:ring-yellow-300">
+                      <p className="text-[10px] font-bold text-yellow-600 uppercase tracking-wider mb-1">Fat (g)</p>
+                      <input type="number" value={editableResult.fat} onChange={(e) => handleInputChange('fat', e.target.value)} className="w-full text-xl font-black text-yellow-700 bg-transparent text-center outline-none" />
+                    </div>
+                  </div>
+
+                  <div className="mb-4">
+                    <h4 className="font-bold text-gray-800 mb-3 flex items-center justify-between">
+                      <span className="flex items-center gap-2"><span className="text-[#f26522]">🥗</span> วัตถุดิบ (ปรับน้ำหนักได้)</span>
+                    </h4>
+                    
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {editableResult.ingredients.map((ing, i) => (
+                        <div key={i} className="bg-gray-50 text-gray-700 text-sm font-medium pl-3 pr-1 py-1 rounded-xl border border-gray-200 flex items-center gap-2 group hover:border-orange-300 transition-colors">
+                          <span className="truncate max-w-[100px]">{ing.name}</span>
+                          
+                          <div className="flex items-center bg-white rounded-lg border border-gray-200 px-2 py-0.5 focus-within:border-[#f26522]">
+                            <input 
+                              type="number" 
+                              value={ing.weight} 
+                              onChange={(e) => updateIngredientWeight(i, Number(e.target.value))}
+                              className="w-10 text-center text-[#f26522] font-bold outline-none bg-transparent hide-arrows"
+                            />
+                            <span className="text-[10px] text-gray-400 font-bold ml-0.5">g</span>
+                          </div>
+
+                          <button onClick={() => removeIngredient(i)} className="w-6 h-6 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full font-bold focus:outline-none transition-colors">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        value={newIngredientName} 
+                        onChange={(e) => setNewIngredientName(e.target.value)}
+                        placeholder="ชื่อวัตถุดิบ..." 
+                        className="w-1/2 bg-white border border-gray-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-[#f26522]"
+                      />
+                      <input 
+                        type="number" 
+                        value={newIngredientWeight} 
+                        onChange={(e) => setNewIngredientWeight(e.target.value ? Number(e.target.value) : "")}
+                        onKeyPress={(e) => e.key === 'Enter' && addIngredient()}
+                        placeholder="กรัม (g)" 
+                        className="w-1/4 bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#f26522] text-center"
+                      />
+                      <button onClick={addIngredient} className="w-1/4 bg-gray-800 hover:bg-gray-900 text-white rounded-xl text-sm font-bold transition-colors">เพิ่ม</button>
+                    </div>
+
+                    <button 
+                      onClick={handleRecalculate} 
+                      className="mt-4 w-full py-3 bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-100 font-bold rounded-xl transition-colors flex justify-center items-center gap-2 shadow-sm"
+                    >
+                      {isRecalculating ? (
+                        <><div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div> กำลังคำนวณ...</>
+                      ) : (
+                        <>🔄 คำนวณแคลอรี่ใหม่จากวัตถุดิบ</>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="mt-auto pt-4 flex gap-3 border-t border-gray-100">
+                    <button onClick={resetAll} className="w-1/3 py-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-all">สแกนใหม่</button>
+                    <button onClick={handleSaveToDiary} className="w-2/3 py-4 bg-gray-900 hover:bg-black text-white font-bold rounded-2xl shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2">
+                      <span>💾</span> บันทึกลงสมุด
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+        )}
+      </main>
+
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes scan {
+          0% { top: 0%; opacity: 0; }
+          10% { opacity: 1; }
+          90% { opacity: 1; }
+          100% { top: 100%; opacity: 0; }
+        }
+        input[type="number"].hide-arrows::-webkit-outer-spin-button,
+        input[type="number"].hide-arrows::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        input[type="number"].hide-arrows {
+          -moz-appearance: textfield;
+        }
+      `}} />
+    </div>
+  );
+}
