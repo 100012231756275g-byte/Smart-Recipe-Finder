@@ -8,10 +8,8 @@ const firebaseConfig = {
   projectId: "smart-recipe-finder-b7c5e",
   storageBucket: "smart-recipe-finder-b7c5e.firebasestorage.app",
   messagingSenderId: "152532056026",
-  appId: "1:152532056026:web:f53d1bd032e2069d6132e3",
-  measurementId: "G-BRXW1BMB1N"
+  appId: "1:152532056026:web:f53d1bd032e2069d6132e3"
 };
 
-// ป้องกันการ Initialize ซ้ำซ้อน
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
