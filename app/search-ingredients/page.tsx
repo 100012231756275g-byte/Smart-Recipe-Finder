@@ -56,11 +56,17 @@ const initialCategories = [
   }
 ];
 
-// เครื่องปรุงพื้นฐานประจำครัว (ขาดได้โดยไม่ตัดสิทธิ์การทำเมนูหลัก)
+// เครื่องปรุงและผักเคียงประจำครัว (ไม่นำมาตัดสิทธิ์ในหมวดทำได้เลย)
 const OPTIONAL_PANTRY = [
+  // เครื่องปรุง & ซอส
   "น้ำปลา", "ซีอิ๊วขาว", "ซอสปรุงรส", "ซอสหอยนางรม", "น้ำมันหอย",
-  "น้ำตาล", "น้ำตาลทราย", "เกลือ", "ผงปรุงรส", "ผงชูรส", "รสดี",
-  "น้ำมัน", "น้ำมันพืช", "พริกไทย", "พริกไทยป่น", "ต้นหอม", "ผักชี"
+  "น้ำตาล", "น้ำตาลทราย", "น้ำตาลปี๊บ", "เกลือ", "ผงปรุงรส", "ผงชูรส", "รสดี",
+  "น้ำมัน", "น้ำมันพืช", "พริกไทย", "พริกไทยป่น", "ซอสมะเขือเทศ", "ซอสพริก",
+  "ซีอิ๊วดำ", "น้ำส้มสายชู", "น้ำเปล่า", "น้ำซุป",
+  
+  // ผักเคียง สมุนไพร และของแต่งกลิ่นรสพื้นฐาน
+  "ต้นหอม", "ผักชี", "กระเทียม", "พริก", "พริกขี้หนู", "มะนาว", "แตงกวา", 
+  "หอมใหญ่", "หอมแดง", "มะเขือเทศ", "ใบมะกรูด", "ตะไคร้"
 ];
 
 // 📚 พจนานุกรมของทดแทน
@@ -99,14 +105,19 @@ const healthRules: Record<string, string[]> = {
   "โรคไขมันในเลือดสูง": ["กะทิ", "หมูสามชั้น", "เนย", "น้ำมันพืช", "ของทอด", "น้ำมัน"]
 };
 
-// ฟังก์ชันเทียบคำวัตถุดิบอัจฉริยะ (แก้ปัญหารูปแบบคำไม่ตรงกัน)
+// ฟังก์ชันจับคู่วัตถุดิบแบบยืดหยุ่น (แก้คำไม่ตรงกันระหว่าง DB กับหน้า UI)
 const isIngredientMatch = (recipeIng: string, selectedIng: string) => {
   const r = recipeIng.trim().toLowerCase();
   const s = selectedIng.trim().toLowerCase();
 
-  if (r.includes(s) || s.includes(r)) return true;
+  if (r === s || r.includes(s) || s.includes(r)) return true;
+
+  // หมวดจับคู่คำพ้อง
+  if (r.includes("ไก่") && s.includes("ไก่")) return true;
+  if (r.includes("หมู") && s.includes("หมู")) return true;
   if (r.includes("ข้าว") && s.includes("ข้าว")) return true;
   if (r.includes("ไข่") && s.includes("ไข่")) return true;
+  if (r.includes("มักกะโรนี") && s.includes("มักกะโรนี")) return true;
   if (r.includes("น้ำมัน") && s.includes("น้ำมัน")) return true;
   if (r.includes("พริก") && s.includes("พริก")) return true;
 
@@ -271,7 +282,7 @@ export default function SearchIngredientsPage() {
     });
   }
 
-  // --- Logic การวิเคราะห์เมนูที่แม่นยำ ---
+  // --- Logic การจับคู่สูตรอาหาร ---
   const analyzeRecipes = () => {
     if (selectedIngredients.length === 0) return { exactMatch: [], partialMatch: [] };
 
@@ -282,12 +293,12 @@ export default function SearchIngredientsPage() {
       const recipeIngs = recipe.ingredients || [];
       if (recipeIngs.length === 0) return;
 
-      // หาวัตถุดิบทั้งหมดที่ขาด
+      // รายการวัตถุดิบทั้งหมดที่ยังไม่ได้เลือก
       const missingIngredients = recipeIngs.filter(
         ing => !selectedIngredients.some(sel => isIngredientMatch(ing, sel))
       );
 
-      // กรองวัตถุดิบหลักที่ขาด (ตัดเครื่องปรุงพื้นฐานออก)
+      // วัตถุดิบหลักที่ขาด (ตัดเครื่องปรุงและผักแต่งกลิ่นออก)
       const missingCoreIngredients = missingIngredients.filter(
         ing => !OPTIONAL_PANTRY.some(p => ing.includes(p))
       );
@@ -327,21 +338,21 @@ export default function SearchIngredientsPage() {
         suggestions: combinedSuggestions
       };
 
-      // 1. หมวด "ทำได้เลย": วัตถุดิบหลักครบ 100% (ขาดได้เฉพาะเครื่องปรุงรอง)
-      if (missingCoreIngredients.length === 0) {
+      // 1. หมวด "🎯 ทำได้เลย": วัตถุดิบหลักครบ หรือขาดของหลักไม่เกิน 1 อย่าง (เช่น มีไก่+มักกะโรนี แต่ขาดไข่)
+      if (missingCoreIngredients.length <= 1 && matchPercentage >= 40) {
         exactMatch.push({
           ...recipeAnalysis,
-          matchPercentage: 100,
-          missing: [] // เคลียร์ข้อความขาดเพื่อความสวยงามในหมวดทำได้เลย
+          matchPercentage: Math.max(matchPercentage, 90),
+          missing: missingCoreIngredients
         });
       }
-      // 2. หมวด "ซื้อเพิ่ม": ขาดวัตถุดิบหลักไม่เกิน 3 อย่าง และความพร้อม >= 40% (ตัดเมนูที่ไม่เกี่ยวข้องออก)
-      else if (missingCoreIngredients.length <= 3 && matchPercentage >= 40) {
+      // 2. หมวด "🛒 ซื้อเพิ่ม": ขาดของหลัก 2-3 อย่าง และมีความพร้อมอย่างน้อย 30%
+      else if (missingCoreIngredients.length <= 3 && matchPercentage >= 30) {
         partialMatch.push(recipeAnalysis);
       }
     });
 
-    // เรียงลำดับเมนูซื้อเพิ่ม: ให้เมนูที่ขาดน้อยที่สุดและ % สูงที่สุดขึ้นก่อน
+    // เรียงลำดับหมวดซื้อเพิ่ม: ขาดน้อยที่สุดขึ้นก่อน
     partialMatch.sort((a, b) => a.missingCount - b.missingCount || b.matchPercentage - a.matchPercentage);
 
     return { exactMatch, partialMatch };
