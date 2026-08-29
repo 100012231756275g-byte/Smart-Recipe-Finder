@@ -3,12 +3,13 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBNpo3I7cl0gi2UFCCNBduCh8N05KUh6hQ",
+  apiKey: "AIzaSyBNpo3I7cl0gi2UfCCNBDuCh8NO5kUh6hQ",
   authDomain: "smart-recipe-finder-b7c5e.firebaseapp.com",
   projectId: "smart-recipe-finder-b7c5e",
   storageBucket: "smart-recipe-finder-b7c5e.firebasestorage.app",
-  messagingSenderId: "157537056076",
-  appId: "1:157537056076:web:f53d1bd032e2069d6132e3"
+  messagingSenderId: "152532056026",
+  appId: "1:152532056026:web:f53d1bd032e2069d6132e3",
+  measurementId: "G-BRXW1BMB1N"
 };
 
 // ป้องกันการ Initialize ซ้ำซ้อน
