@@ -118,7 +118,7 @@ function RecipeDetailContent() {
         try {
           const parsed = JSON.parse(savedFridgeStr);
           if (Array.isArray(parsed)) {
-           setUserFridge(parsed.map((item: { name?: string } | string) => typeof item === 'string' ? item : (item?.name || '')));
+            setUserFridge(parsed.map((item: string | { name?: string }) => typeof item === 'string' ? item : (item?.name || "")));
           }
         } catch {
           setUserFridge(savedFridgeStr.split(",").map(i => i.trim()));

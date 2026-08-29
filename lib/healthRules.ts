@@ -1,117 +1,260 @@
 // lib/healthRules.ts
 
-export interface HealthProfile {
-  allergies: string[];
-  chronicDiseases: string[];
+export interface UserHealthProfile {
+  allergies?: string[];
+  chronicDiseases?: string[];
   bmi?: number;
+  age?: number;
 }
 
-// 📚 พจนานุกรมจับคู่วัตถุดิบทดแทน
-export const substituteMap: Record<string, { replaceWith: string; reason: string }> = {
-  // 🦐 อาหารทะเล / สัตว์น้ำ
-  "กุ้งแห้งทอด": { replaceWith: "เต้าหู้ทอดไร้น้ำมัน หรือ ฟองเต้าหู้กรอบ", reason: "เลี่ยงการแพ้อาหารทะเล" },
-  "กุ้งแห้ง": { replaceWith: "เต้าหู้แผ่นอบกรอบ", reason: "เลี่ยงการแพ้อาหารทะเล" },
-  "กุ้ง": { replaceWith: "เนื้ออกไก่ หรือ เต้าหู้ขาวแข็ง", reason: "เลี่ยงการแพ้อาหารทะเล" },
-  "ปูดำหรือปูม้า": { replaceWith: "เต้าหู้ขาวแข็ง หรือ เห็ดออรินจิ", reason: "เลี่ยงการแพ้อาหารทะเล" },
-  "ปู": { replaceWith: "เห็ดออรินจิ", reason: "เลี่ยงการแพ้อาหารทะเล" },
-  "ปลาหมึก": { replaceWith: "เห็ดนางรมหลวงหั่นแว่น", reason: "เลี่ยงการแพ้อาหารทะเล" },
-  "หอยนางรม": { replaceWith: "เห็ดหอมสด", reason: "เลี่ยงการแพ้อาหารทะเล" },
-  "หอย": { replaceWith: "เห็ดหอมสด", reason: "เลี่ยงการแพ้อาหารทะเล" },
-  "ปลา": { replaceWith: "อกไก่ หรือ เต้าหู้ขาว", reason: "เลี่ยงการแพ้ปลา" },
+export interface SubstitutionDetail {
+  original: string;
+  substitute: string;
+  reason: string;
+  type: "allergy" | "disease" | "bmi" | "age";
+}
 
-  // 🥜 ถั่ว / แป้ง / ไข่
-  "ถั่วลิสงคั่ว": { replaceWith: "เมล็ดทานตะวันอบ หรือ เมล็ดฟักทอง", reason: "เลี่ยงการแพ้ถั่วลิสง" },
-  "ถั่วลิสง": { replaceWith: "เมล็ดทานตะวันอบ", reason: "เลี่ยงการแพ้ถั่วลิสง" },
-  "ไข่ไก่": { replaceWith: "เต้าหู้ขาวบด", reason: "เลี่ยงการแพ้ไข่" },
-  "ไข่": { replaceWith: "เต้าหู้ขาว", reason: "เลี่ยงการแพ้ไข่" },
+export interface HealthSafetyResult {
+  safeIngredients: string[];
+  substitutions: SubstitutionDetail[];
+  allergiesDetected: string[];
+  diseaseRisksDetected: { disease: string; ingredient: string }[];
+  isSafe: boolean;
+}
 
-  // 🥑 ไขมันสูง / BMI เกิน
-  "น้ำมันพืช": { replaceWith: "น้ำมันรำข้าว 1 ช้อนชา (หรือใช้น้ำซุปผัดแทน)", reason: "ลดไขมันอิ่มตัวสำหรับผู้คุมน้ำหนัก" },
-  "น้ำมัน": { replaceWith: "น้ำมันมะกอก/รำข้าว (สเปรย์บางๆ)", reason: "ลดไขมันสะสม" },
-  "มันหมู": { replaceWith: "น้ำมันรำข้าวปริมาณน้อย", reason: "ลดไขมันอิ่มตัว" },
-  "หมูสามชั้น": { replaceWith: "สันในหมู หรือ อกไก่ไร้หนัง", reason: "ลดไขมันอิ่มตัว" },
-  "กะทิ": { replaceWith: "นมจืดไขมันต่ำ (Low Fat) หรือ นมถั่วเหลืองจืด", reason: "ลดคอเลสเตอรอล" },
-  "หมูกรอบ": { replaceWith: "หมูอบหม้อทอดไร้น้ำมัน", reason: "ลดไขมันจากของทอด" },
-
-  // 🧂 โซเดียมสูง (ความดัน / โรคไต)
-  "ซอสหอยนางรม": { replaceWith: "ซอสหอยนางรมสูตรลดโซเดียม 50%", reason: "ควบคุมระดับโซเดียม" },
-  "เต้าเจี้ยว": { replaceWith: "เต้าเจี้ยวสูตรลดเค็ม", reason: "ควบคุมระดับโซเดียม" },
-  "น้ำปลา": { replaceWith: "น้ำปลาแท้สูตรลดโซเดียม", reason: "ลดภาระการทำงานของไต" },
-  "ซีอิ๊วขาว": { replaceWith: "ซีอิ๊วขาวสูตร Low Sodium", reason: "ลดระดับโซเดียม" },
-
-  // 🍯 น้ำตาล (เบาหวาน)
-  "น้ำตาลทราย": { replaceWith: "สารให้ความหวาน (หญ้าหวาน/อิริทริทอล)", reason: "ควบคุมน้ำตาลในเลือด" },
-  "น้ำตาล": { replaceWith: "สารสกัดหญ้าหวานสตีเวีย", reason: "ควบคุมน้ำตาลในเลือด" }
+// 📚 1. กฎการทดแทนสำหรับสารก่อภูมิแพ้ (Allergies)
+const allergySubstitutes: Record<string, { substitute: string; reason: string }> = {
+  กุ้ง: { substitute: "อกไก่ หรือ เต้าหู้ขาว", reason: "หลีกเลี่ยงอาการแพ้อาหารทะเล (กุ้ง)" },
+  กุ้งขาว: { substitute: "อกไก่ หรือ เต้าหู้ขาว", reason: "หลีกเลี่ยงอาการแพ้อาหารทะเล (กุ้ง)" },
+  กุ้งแห้ง: { substitute: "เต้าหู้หั่นเต๋าอบแห้ง หรือ เห็ดหอมคั่ว", reason: "หลีกเลี่ยงอาการแพ้อาหารทะเล (กุ้ง)" },
+  ปู: { substitute: "เนื้อปลา หรือ เต้าหู้ขาว", reason: "หลีกเลี่ยงอาการแพ้อาหารทะเล (ปู)" },
+  ปูม้า: { substitute: "เนื้อปลา หรือ เต้าหู้ขาว", reason: "หลีกเลี่ยงอาการแพ้อาหารทะเล (ปู)" },
+  ปลาหมึก: { substitute: "เนื้อปลา หรือ อกไก่", reason: "หลีกเลี่ยงอาการแพ้อาหารทะเล (ปลาหมึก)" },
+  หอย: { substitute: "เห็ดนางฟ้า หรือ เต้าหู้ขาว", reason: "หลีกเลี่ยงอาการแพ้อาหารทะเล (หอย)" },
+  อาหารทะเล: { substitute: "อกไก่ หรือ เต้าหู้ขาว", reason: "หลีกเลี่ยงอาการแพ้อาหารทะเล" },
+  ถั่ว: { substitute: "เมล็ดทานตะวัน หรือ ถั่วลูกไก่", reason: "หลีกเลี่ยงอาการแพ้ถั่ว" },
+  ถั่วลิสง: { substitute: "เมล็ดทานตะวันคั่ว หรือ งาขาวคั่ว", reason: "หลีกเลี่ยงอาการแพ้ถั่วลิสง" },
+  ไข่: { substitute: "เต้าหู้ขาวแข็ง หรือ อกไก่สับ", reason: "หลีกเลี่ยงอาการแพ้ไข่" },
+  ไข่ไก่: { substitute: "เต้าหู้ขาวแข็ง หรือ อกไก่สับ", reason: "หลีกเลี่ยงอาการแพ้ไข่" },
+  นม: { substitute: "นมอัลมอนด์ หรือ นมถั่วเหลือง (สูตรไม่เติมน้ำตาล)", reason: "หลีกเลี่ยงอาการแพ้นมวัว" },
+  นมวัว: { substitute: "นมอัลมอนด์ หรือ นมข้าวโอ๊ต", reason: "หลีกเลี่ยงอาการแพ้นมวัว" }
 };
 
-// 🔍 ฟังก์ชันตรวจสอบและแทนที่วัตถุดิบ
-export function checkIngredientsSafety(ingredients: string[], profile: HealthProfile) {
-  const warnings: string[] = [];
+// 🩺 2. กฎการทดแทนตามโรคประจำตัว (Chronic Diseases)
+interface DiseaseRule {
+  keywords: string[];
+  substitute: string;
+  reason: string;
+}
 
-  const isHighBMI = profile.bmi ? profile.bmi >= 23 : false;
-  const hasFatIssue = profile.chronicDiseases?.some(d => d.includes("ไขมัน") || d.includes("อ้วน")) || isHighBMI;
-  const hasSodiumIssue = profile.chronicDiseases?.some(d => d.includes("ความดัน") || d.includes("ไต"));
-  const hasSugarIssue = profile.chronicDiseases?.some(d => d.includes("เบาหวาน"));
+const diseaseSubstitutionRules: Record<string, DiseaseRule[]> = {
+  "โรคเบาหวาน": [
+    {
+      keywords: ["น้ำตาล", "น้ำตาลทราย", "น้ำตาลปี๊บ", "น้ำเชื่อม", "น้ำผึ้ง", "นมข้นหวาน"],
+      substitute: "หญ้าหวาน (Stevia) หรือ อิริทริทอล",
+      reason: "ควบคุมระดับน้ำตาลในเลือดสำหรับผู้ป่วยเบาหวาน"
+    },
+    {
+      keywords: ["ข้าวสวย", "ข้าวขาว"],
+      substitute: "ข้าวกล้อง หรือ ข้าวไรซ์เบอร์รี่ (ดัชนีน้ำตาลต่ำ)",
+      reason: "ชะลอการดูดซึมน้ำตาลเข้าสู่กระแสเลือด"
+    },
+    {
+      keywords: ["วุ้นเส้น", "เส้นใหญ่"],
+      substitute: "เส้นบุก หรือ เส้นโอ๊ตไฟเบอร์",
+      reason: "ลดปริมาณคาร์โบไฮเดรตและแป้งขัดสี"
+    }
+  ],
+  "โรคความดันโลหิตสูง": [
+    {
+      keywords: ["น้ำปลา", "เกลือ", "ซีอิ๊วขาว", "ซีอิ๊วดำ", "ซอสหอยนางรม", "เต้าเจี้ยว"],
+      substitute: "น้ำปลาแท้สูตรลดโซเดียม 60% หรือ ซอสโซเดียมต่ำ",
+      reason: "ควบคุมปริมาณโซเดียมเพื่อลดความดันโลหิต"
+    },
+    {
+      keywords: ["ผงชูรส", "ผงปรุงรส", "ซุปก้อน"],
+      substitute: "สมุนไพรธรรมชาติ (หอมแดง กระเทียม พริกไทย)",
+      reason: "ลดโซเดียมแฝงในผงปรุงรสสังเคราะห์"
+    },
+    {
+      keywords: ["กะปิ", "ปลาร้า"],
+      substitute: "ซอสเห็ดหอมสูตรลดโซเดียม",
+      reason: "ลดปริมาณโซเดียมสูงจากของหมักดอง"
+    }
+  ],
+  "โรคไตเรื้อรัง": [
+    {
+      keywords: ["น้ำปลา", "เกลือ", "ซีอิ๊วขาว", "ผงชูรส", "ผงปรุงรส", "ซุปก้อน", "กะปิ"],
+      substitute: "เครื่องปรุงรสสูตรเฉพาะผู้ป่วยโรคไต (โซเดียมและโพแทสเซียมต่ำ)",
+      reason: "ชะลอการเสื่อมของไตและลดภาระการขับเกลือแร่"
+    }
+  ],
+  "โรคไขมันในเลือดสูง": [
+    {
+      keywords: ["กะทิ"],
+      substitute: "นมจืดไขมันต่ำ (Low Fat) หรือ นมถั่วเหลืองจืด",
+      reason: "ลดกรดไขมันอิ่มตัว ป้องกันคอเลสเตอรอลในเลือดสูง"
+    },
+    {
+      keywords: ["หมูสามชั้น", "คอหมู", "หมูกรอบ", "หนังหมู", "เบคอน"],
+      substitute: "สันในหมู หรือ อกไก่ลอกหนัง (เนื้อไม่ติดมัน)",
+      reason: "ลดไขมันอิ่มตัวและแคลอรี่ส่วนเกิน"
+    },
+    {
+      keywords: ["น้ำมันปาล์ม", "น้ำมันหมู", "เนย", "กากหมู"],
+      substitute: "น้ำมันรำข้าว / น้ำมันมะกอก (ใช้น้อย) หรือ น้ำสต๊อกผัดไร้น้ำมัน",
+      reason: "ลดคอเลสเตอรอลและไขมันทรานส์"
+    }
+  ],
+  "โรคหัวใจและหลอดเลือด": [
+    {
+      keywords: ["กะทิ"],
+      substitute: "นมจืดไขมันต่ำ (Low Fat) หรือ นมอัลมอนด์",
+      reason: "ป้องกันไขมันอิ่มตัวสะสมในหลอดเลือดหัวใจ"
+    },
+    {
+      keywords: ["หมูสามชั้น", "เนย", "น้ำมัน"],
+      substitute: "เนื้อสัตว์ไม่ติดมัน และ ปรุงด้วยวิธีต้ม/นึ่ง/ผัดน้ำ",
+      reason: "ดูแลสุขภาพหลอดเลือดหัวใจ"
+    }
+  ],
+  "โรคเกาต์": [
+    {
+      keywords: ["ไก่", "อกไก่", "น่องไก่", "ปีกไก่", "เป็ด", "สัตว์ปีก"],
+      substitute: "เนื้อปลา หรือ ไข่ขาว หรือ เต้าหู้",
+      reason: "ลดสารพิวรีนสูงจากสัตว์ปีก ป้องกันกรดยูริกกำเริบ"
+    },
+    {
+      keywords: ["เครื่องใน", "ตับหมู", "ตับไก่", "กึ๋น"],
+      substitute: "เนื้อหมูสันใน (ไม่ติดมัน)",
+      reason: "หลีกเลี่ยงพิวรีนระดับสูงมากในเครื่องในสัตว์"
+    },
+    {
+      keywords: ["ชะอม", "กระถิน", "หน่อไม้", "เห็ด", "ยอดผัก"],
+      substitute: "ผักกาดขาว แครอท หรือ ผักกวางตุ้ง",
+      reason: "หลีกเลี่ยงยอดผักที่มีพิวรีนสูง"
+    }
+  ],
+  "โรคอ้วนลงพุง": [
+    {
+      keywords: ["กะทิ"],
+      substitute: "นมจืดไขมันต่ำ (Low Fat) หรือ นมถั่วเหลืองจืด",
+      reason: "ลดพลังงานและไขมันอิ่มตัวสำหรับควบคุมน้ำหนัก"
+    },
+    {
+      keywords: ["หมูสามชั้น", "หมูกรอบ"],
+      substitute: "อกไก่ หรือ สันในหมู",
+      reason: "ลดปริมาณไขมันและแคลอรี่ต่อมื้อ"
+    },
+    {
+      keywords: ["น้ำตาล", "น้ำตาลทราย"],
+      substitute: "สารให้ความหวานทดแทนน้ำตาล 0 kcal",
+      reason: "ตัดพลังงานส่วนเกินจากน้ำตาลทราย"
+    }
+  ]
+};
 
-  const safeIngredients = ingredients.map((item) => {
-    let replacedText = item;
+// ⚖️ 3. กฎสำหรับ BMI สูง (น้ำหนักเกิน/อ้วน)
+const highBmiRules: DiseaseRule[] = [
+  {
+    keywords: ["กะทิ"],
+    substitute: "นมจืดไขมันต่ำ (Low Fat) หรือ นมถั่วเหลืองจืด",
+    reason: "ปรับลดพลังงานไขมันสำหรับควบคุม BMI"
+  },
+  {
+    keywords: ["หมูสามชั้น", "หมูกรอบ"],
+    substitute: "อกไก่ หรือ สันในหมู (ไม่ติดมัน)",
+    reason: "ลดพลังงานส่วนเกินเพื่อควบคุมน้ำหนัก"
+  }
+];
 
-    // 1. ตรวจจับภูมิแพ้ (Allergy Check)
-    for (const allergy of profile.allergies || []) {
-      if (!allergy) continue;
-      
-      const isMatchAllergy = 
-        item.includes(allergy) || 
-        (allergy === "อาหารทะเล" && ["กุ้ง", "ปู", "ปลาหมึก", "หอย", "ปลา"].some(sea => item.includes(sea)));
+/**
+ * 🌟 ฟังก์ชันหลัก: ตรวจสอบและประมวลผลความปลอดภัยของวัตถุดิบ พร้อมแทนที่วัตถุดิบทดแทน
+ */
+export function checkIngredientsSafety(
+  ingredients: string[],
+  profile: UserHealthProfile
+): HealthSafetyResult {
+  const safeIngredients: string[] = [];
+  const substitutions: SubstitutionDetail[] = [];
+  const allergiesDetected: string[] = [];
+  const diseaseRisksDetected: { disease: string; ingredient: string }[] = [];
 
-      if (isMatchAllergy) {
-        // ค้นหาวัตถุดิบทดแทนที่ตรงที่สุด
-        let matchKey = Object.keys(substituteMap).find(key => item.includes(key));
-        if (!matchKey && allergy === "อาหารทะเล") matchKey = "กุ้ง";
+  const { allergies = [], chronicDiseases = [], bmi } = profile;
 
-        const replacement = matchKey ? substituteMap[matchKey]?.replaceWith : "วัตถุดิบทดแทนที่ปลอดภัย";
-        warnings.push(`พบส่วนผสมที่คุณแพ้ (${allergy}): ${item}`);
-        replacedText = `${item} (เปลี่ยนเป็น: ${replacement})`;
-        return replacedText;
+  for (const originalIng of ingredients) {
+    let replacedText: string | null = null;
+    let foundSubDetail: SubstitutionDetail | null = null;
+
+    // 1. ตรวจสอบสารก่อภูมิแพ้ (Allergies) - ความสำคัญสูงสุด
+    for (const allergy of allergies) {
+      if (originalIng.includes(allergy) || (allergy === "อาหารทะเล" && (originalIng.includes("กุ้ง") || originalIng.includes("ปลาหมึก") || originalIng.includes("ปู") || originalIng.includes("หอย")))) {
+        allergiesDetected.push(originalIng);
+
+        const matchedKey = Object.keys(allergySubstitutes).find(k => originalIng.includes(k) || allergy.includes(k));
+        const subData = matchedKey ? allergySubstitutes[matchedKey] : { substitute: "อกไก่ หรือ เต้าหู้", reason: `หลีกเลี่ยงอาการแพ้ (${allergy})` };
+
+        replacedText = `${originalIng} (เปลี่ยนเป็น: ${subData.substitute})`;
+        foundSubDetail = {
+          original: originalIng,
+          substitute: subData.substitute,
+          reason: subData.reason,
+          type: "allergy"
+        };
+        break;
       }
     }
 
-    // 2. ตรวจจับไขมัน / BMI สูง
-    if (hasFatIssue) {
-      for (const key of ["น้ำมันพืช", "มันหมู", "หมูสามชั้น", "กะทิ", "หมูกรอบ", "น้ำมัน"]) {
-        if (item.includes(key) && substituteMap[key]) {
-          warnings.push(`พบวัตถุดิบไขมันสูง (${key})`);
-          replacedText = `${item} (เปลี่ยนเป็น: ${substituteMap[key].replaceWith})`;
-          return replacedText;
+    // 2. ตรวจสอบโรคประจำตัว (Chronic Diseases)
+    if (!replacedText) {
+      for (const disease of chronicDiseases) {
+        const rules = diseaseSubstitutionRules[disease];
+        if (rules) {
+          const matchedRule = rules.find(rule => rule.keywords.some(kw => originalIng.includes(kw)));
+          if (matchedRule) {
+            diseaseRisksDetected.push({ disease, ingredient: originalIng });
+            replacedText = `${originalIng} (เปลี่ยนเป็น: ${matchedRule.substitute})`;
+            foundSubDetail = {
+              original: originalIng,
+              substitute: matchedRule.substitute,
+              reason: matchedRule.reason,
+              type: "disease"
+            };
+            break;
+          }
         }
       }
     }
 
-    // 3. ตรวจจับโซเดียมสูง (ความดัน / ไต)
-    if (hasSodiumIssue) {
-      for (const key of ["ซอสหอยนางรม", "เต้าเจี้ยว", "น้ำปลา", "ซีอิ๊วขาว"]) {
-        if (item.includes(key) && substituteMap[key]) {
-          replacedText = `${item} (เปลี่ยนเป็น: ${substituteMap[key].replaceWith})`;
-          return replacedText;
-        }
+    // 3. ตรวจสอบกรณี BMI เกินเกณฑ์ (BMI >= 23)
+    if (!replacedText && bmi && bmi >= 23) {
+      const matchedBmiRule = highBmiRules.find(rule => rule.keywords.some(kw => originalIng.includes(kw)));
+      if (matchedBmiRule) {
+        replacedText = `${originalIng} (เปลี่ยนเป็น: ${matchedBmiRule.substitute})`;
+        foundSubDetail = {
+          original: originalIng,
+          substitute: matchedBmiRule.substitute,
+          reason: matchedBmiRule.reason,
+          type: "bmi"
+        };
       }
     }
 
-    // 4. ตรวจจับน้ำตาล (เบาหวาน)
-    if (hasSugarIssue) {
-      for (const key of ["น้ำตาลทราย", "น้ำตาล"]) {
-        if (item.includes(key) && substituteMap[key]) {
-          replacedText = `${item} (เปลี่ยนเป็น: ${substituteMap[key].replaceWith})`;
-          return replacedText;
-        }
-      }
+    if (replacedText && foundSubDetail) {
+      safeIngredients.push(replacedText);
+      substitutions.push(foundSubDetail);
+    } else {
+      safeIngredients.push(originalIng);
     }
+  }
 
-    return replacedText;
-  });
+  const isSafe = allergiesDetected.length === 0 && diseaseRisksDetected.length === 0;
 
   return {
-    warnings: Array.from(new Set(warnings)),
-    safeIngredients
+    safeIngredients,
+    substitutions,
+    allergiesDetected: Array.from(new Set(allergiesDetected)),
+    diseaseRisksDetected,
+    isSafe
   };
 }
