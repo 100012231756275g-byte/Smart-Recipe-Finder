@@ -56,6 +56,13 @@ const initialCategories = [
   }
 ];
 
+// เครื่องปรุงพื้นฐานประจำครัว (ขาดได้โดยไม่ตัดสิทธิ์การทำเมนูหลัก)
+const OPTIONAL_PANTRY = [
+  "น้ำปลา", "ซีอิ๊วขาว", "ซอสปรุงรส", "ซอสหอยนางรม", "น้ำมันหอย",
+  "น้ำตาล", "น้ำตาลทราย", "เกลือ", "ผงปรุงรส", "ผงชูรส", "รสดี",
+  "น้ำมัน", "น้ำมันพืช", "พริกไทย", "พริกไทยป่น", "ต้นหอม", "ผักชี"
+];
+
 // 📚 พจนานุกรมของทดแทน
 const substitutionDictionary: Record<string, string> = {
   "หมูสับ": "ไก่สับ หรือ เนื้อสับ",
@@ -90,6 +97,20 @@ const healthRules: Record<string, string[]> = {
   "โรคไตเรื้อรัง": ["น้ำปลา", "เกลือ", "ผงชูรส", "กะปิ", "โซเดียม"],
   "ไขมันในเลือดสูง": ["กะทิ", "หมูสามชั้น", "เนย", "น้ำมันพืช", "ของทอด", "น้ำมัน"],
   "โรคไขมันในเลือดสูง": ["กะทิ", "หมูสามชั้น", "เนย", "น้ำมันพืช", "ของทอด", "น้ำมัน"]
+};
+
+// ฟังก์ชันเทียบคำวัตถุดิบอัจฉริยะ (แก้ปัญหารูปแบบคำไม่ตรงกัน)
+const isIngredientMatch = (recipeIng: string, selectedIng: string) => {
+  const r = recipeIng.trim().toLowerCase();
+  const s = selectedIng.trim().toLowerCase();
+
+  if (r.includes(s) || s.includes(r)) return true;
+  if (r.includes("ข้าว") && s.includes("ข้าว")) return true;
+  if (r.includes("ไข่") && s.includes("ไข่")) return true;
+  if (r.includes("น้ำมัน") && s.includes("น้ำมัน")) return true;
+  if (r.includes("พริก") && s.includes("พริก")) return true;
+
+  return false;
 };
 
 const checkRecipeSafety = (ingredients: string[], userDiseases: string[]) => {
@@ -158,7 +179,6 @@ export default function SearchIngredientsPage() {
     }
   };
 
-  // 🌟 ซิงค์สถานะการล็อกอินและข้อมูลสุขภาพจากทุก Storage
   useEffect(() => {
     const loadUserData = () => {
       const isSessionLoggedIn = sessionStorage.getItem("isLoggedIn") === "true";
@@ -169,7 +189,6 @@ export default function SearchIngredientsPage() {
       setIsUserLoggedIn(loggedIn);
 
       if (loggedIn) {
-        // ดึงข้อมูลภูมิแพ้
         const savedAllergies = localStorage.getItem("allergies");
         if (savedAllergies) {
           setUserAllergies(savedAllergies.split(",").map(a => a.trim()).filter(Boolean));
@@ -185,7 +204,6 @@ export default function SearchIngredientsPage() {
           }
         }
 
-        // ดึงข้อมูลโรคประจำตัว
         const savedDiseases = localStorage.getItem("diseases");
         if (savedDiseases) {
           setUserDiseases(savedDiseases.split(",").map(d => d.trim()).filter(Boolean));
@@ -253,20 +271,31 @@ export default function SearchIngredientsPage() {
     });
   }
 
+  // --- Logic การวิเคราะห์เมนูที่แม่นยำ ---
   const analyzeRecipes = () => {
     if (selectedIngredients.length === 0) return { exactMatch: [], partialMatch: [] };
 
-    const analyzed: AnalyzedRecipe[] = allRecipes.map((recipe) => {
+    const exactMatch: AnalyzedRecipe[] = [];
+    const partialMatch: AnalyzedRecipe[] = [];
+
+    allRecipes.forEach((recipe) => {
       const recipeIngs = recipe.ingredients || [];
-      
+      if (recipeIngs.length === 0) return;
+
+      // หาวัตถุดิบทั้งหมดที่ขาด
       const missingIngredients = recipeIngs.filter(
-        ing => !selectedIngredients.some(sel => ing.includes(sel))
+        ing => !selectedIngredients.some(sel => isIngredientMatch(ing, sel))
       );
 
-      const matchPercentage = recipeIngs.length > 0 
-        ? Math.round(((recipeIngs.length - missingIngredients.length) / recipeIngs.length) * 100)
-        : 100;
+      // กรองวัตถุดิบหลักที่ขาด (ตัดเครื่องปรุงพื้นฐานออก)
+      const missingCoreIngredients = missingIngredients.filter(
+        ing => !OPTIONAL_PANTRY.some(p => ing.includes(p))
+      );
 
+      const matchedCount = recipeIngs.length - missingIngredients.length;
+      const matchPercentage = Math.round((matchedCount / recipeIngs.length) * 100);
+
+      // คำแนะนำการแทนที่วัตถุดิบ
       const missingSuggestions = missingIngredients.map(missing => {
         const foundKey = Object.keys(substitutionDictionary).find(key => missing.includes(key));
         if (foundKey) return `ขาด ${missing} ➜ ใช้: ${substitutionDictionary[foundKey]}`;
@@ -290,17 +319,30 @@ export default function SearchIngredientsPage() {
 
       const combinedSuggestions = Array.from(new Set([...healthSuggestions, ...missingSuggestions]));
 
-      return { 
-        ...recipe, 
-        missing: missingIngredients, 
-        missingCount: missingIngredients.length, 
-        matchPercentage, 
-        suggestions: combinedSuggestions 
+      const recipeAnalysis: AnalyzedRecipe = {
+        ...recipe,
+        missing: missingIngredients,
+        missingCount: missingIngredients.length,
+        matchPercentage,
+        suggestions: combinedSuggestions
       };
+
+      // 1. หมวด "ทำได้เลย": วัตถุดิบหลักครบ 100% (ขาดได้เฉพาะเครื่องปรุงรอง)
+      if (missingCoreIngredients.length === 0) {
+        exactMatch.push({
+          ...recipeAnalysis,
+          matchPercentage: 100,
+          missing: [] // เคลียร์ข้อความขาดเพื่อความสวยงามในหมวดทำได้เลย
+        });
+      }
+      // 2. หมวด "ซื้อเพิ่ม": ขาดวัตถุดิบหลักไม่เกิน 3 อย่าง และความพร้อม >= 40% (ตัดเมนูที่ไม่เกี่ยวข้องออก)
+      else if (missingCoreIngredients.length <= 3 && matchPercentage >= 40) {
+        partialMatch.push(recipeAnalysis);
+      }
     });
 
-    const exactMatch = analyzed.filter(r => r.missingCount === 0);
-    const partialMatch = analyzed.filter(r => r.missingCount > 0 && r.matchPercentage > 0).sort((a, b) => b.matchPercentage - a.matchPercentage);
+    // เรียงลำดับเมนูซื้อเพิ่ม: ให้เมนูที่ขาดน้อยที่สุดและ % สูงที่สุดขึ้นก่อน
+    partialMatch.sort((a, b) => a.missingCount - b.missingCount || b.matchPercentage - a.matchPercentage);
 
     return { exactMatch, partialMatch };
   };
@@ -425,7 +467,7 @@ export default function SearchIngredientsPage() {
 
       <main className="flex-grow w-full max-w-5xl mx-auto flex flex-col items-center pt-10 pb-24 px-4">
         
-        {/* Banner Login (ซ่อนอัตโนมัติเมื่อเข้าสู่ระบบแล้ว) */}
+        {/* Banner Login */}
         {!isUserLoggedIn && (
           <div className="w-full max-w-5xl bg-blue-50 border border-blue-200 text-blue-700 px-6 py-3 rounded-2xl font-bold mb-6 text-sm shadow-sm flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -523,7 +565,7 @@ export default function SearchIngredientsPage() {
                   <span className="text-5xl mb-2 drop-shadow-sm">🥲</span>
                   <h3 className="text-2xl font-extrabold text-red-600">วัตถุดิบไม่เพียงพอสำหรับทำอาหาร</h3>
                   <p className="text-red-500 text-sm md:text-base font-medium max-w-md">
-                    ในฐานข้อมูลไม่มีเมนูไหนที่ใช้ของตรงกับที่คุณมีแบบ 100% เลยครับ ต้องหาซื้อของเพิ่มอีกนิดหน่อย
+                    ในฐานข้อมูลไม่มีเมนูไหนที่ใช้วัตถุดิบหลักตรงกับที่คุณมีเลยครับ ต้องหาซื้อของเพิ่มอีกนิดหน่อย
                   </p>
                   
                   <div className="mt-4 flex flex-col sm:flex-row gap-4 w-full justify-center">
