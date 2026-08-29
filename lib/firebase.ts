@@ -3,7 +3,7 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBNpo3I7cl0gi2UfCCNBDuCh8NO5kUh6hQ",
+  apiKey: "AIzaSyBnpO3i7C10gi2UFCCNBDucH8NO5KUhQhQ",
   authDomain: "smart-recipe-finder-b7c5e.firebaseapp.com",
   projectId: "smart-recipe-finder-b7c5e",
   storageBucket: "smart-recipe-finder-b7c5e.firebasestorage.app",
