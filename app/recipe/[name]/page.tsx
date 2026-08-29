@@ -4,6 +4,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@supabase/supabase-js"; 
+import { checkIngredientsSafety } from "@/lib/healthRules";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -37,6 +38,22 @@ const diseaseRiskMap: Record<string, string[]> = {
   "โรคเกาต์": ["ไก่", "เป็ด", "เครื่องใน", "กะปิ", "ชะอม", "กระถิน", "หน่อไม้", "เห็ด", "ยอดผัก"]
 };
 
+// 📚 ฐานข้อมูลวัตถุดิบทดแทนสำหรับของที่ขาดในตู้เย็น
+const missingSubstituteMap: Record<string, string> = {
+  "หมูสับ": "ไก่สับ หรือ เนื้อสับ / เต้าหู้ขาวบด",
+  "หมู": "เนื้อไก่ หรือ เนื้อวัว / เห็ดออรินจิ",
+  "มะนาว": "น้ำมะขามเปียก หรือ น้ำส้มสายชู (ให้ความเปรี้ยวแทน)",
+  "กุ้งแห้ง": "เต้าหู้ทอดกรอบ หรือ ปลากรอบ",
+  "กุ้ง": "ไก่ หรือ ปลาหมึก / เต้าหู้ขาว",
+  "น้ำปลา": "ซีอิ๊วขาว หรือ เกลือป่น",
+  "น้ำตาล": "น้ำเชื่อม หรือ น้ำผึ้ง / หญ้าหวาน",
+  "กะทิ": "นมสดจืด หรือ นมถั่วเหลือง",
+  "พริกขี้หนู": "พริกป่น หรือ พริกชี้ฟ้า",
+  "หอมแดง": "หอมหัวใหญ่ (ซอยบาง)",
+  "กระเทียม": "กระเทียมผง หรือ หอมใหญ่สับ",
+  "ไข่ไก่": "เต้าหู้ไข่ หรือ เต้าหู้ขาว"
+};
+
 const highFatIngredients = ["กะทิ", "หมูสามชั้น", "หนังหมู", "น้ำมัน", "เนย", "หมูกรอบ", "คอหมู"];
 const spicyKeywords = ["พริก", "เผ็ด", "ต้มยำ", "ยำ", "ส้มตำ", "หมาล่า", "พริกแกง"];
 const hardToChewKeywords = ["ทอดกรอบ", "หมูกรอบ", "เหนียว", "เอ็น", "กระดูกอ่อน"];
@@ -60,8 +77,8 @@ function RecipeDetailContent() {
   const [userBMIStatus, setUserBMIStatus] = useState<string | null>(null);
   const [userTDEE, setUserTDEE] = useState<number | null>(null);
   const [userAge, setUserAge] = useState<number | null>(null);
+  const [userFridge, setUserFridge] = useState<string[]>([]); // 🧊 เก็บรายการของในตู้เย็น
   
-  // 🌟 เพิ่ม State ไว้เก็บชื่อเจ้าของ (contact)
   const [currentUserContact, setCurrentUserContact] = useState<string>("");
 
   const [isFavorite, setIsFavorite] = useState(false);
@@ -71,11 +88,9 @@ function RecipeDetailContent() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      // 🌟 ดึงข้อมูลล็อคอินจาก sessionStorage
       const loggedIn = sessionStorage.getItem("isLoggedIn") === "true";
       setIsUserLoggedIn(loggedIn);
 
-      // 🌟 ดึงชื่อเจ้าของ (contact) มาจาก mockUser
       const savedUserStr = sessionStorage.getItem("mockUser");
       if (savedUserStr) {
         const savedUser = JSON.parse(savedUserStr);
@@ -96,6 +111,19 @@ function RecipeDetailContent() {
 
       const savedAge = localStorage.getItem("userAge");
       if (savedAge) setUserAge(parseInt(savedAge));
+
+      // 🧊 ดึงข้อมูลวัตถุดิบในตู้เย็นของผู้ใช้
+      const savedFridgeStr = localStorage.getItem("fridgeIngredients") || localStorage.getItem("myFridge") || localStorage.getItem("selectedIngredients");
+      if (savedFridgeStr) {
+        try {
+          const parsed = JSON.parse(savedFridgeStr);
+          if (Array.isArray(parsed)) {
+           setUserFridge(parsed.map((item: { name?: string } | string) => typeof item === 'string' ? item : (item?.name || '')));
+          }
+        } catch {
+          setUserFridge(savedFridgeStr.split(",").map(i => i.trim()));
+        }
+      }
     }, 0);
 
     const loadRecipe = async () => {
@@ -156,14 +184,13 @@ function RecipeDetailContent() {
 
   useEffect(() => {
     const checkFavoriteStatus = async () => {
-      // 🌟 ต้องมีครบทั้ง recipe, loggedin และ ต้องรู้ด้วยว่าคนล็อคอินคือใคร
       if (recipe && isUserLoggedIn && currentUserContact) {
         try {
           const { data, error } = await supabase
             .from('favorites')
             .select('id')
             .eq('name', recipe.name)
-            .eq('user_contact', currentUserContact) // 🚨 เพิ่มตัวกรอง: ต้องเป็นของคนคนนี้เท่านั้น!
+            .eq('user_contact', currentUserContact)
             .maybeSingle(); 
           
           if (error) {
@@ -185,7 +212,6 @@ function RecipeDetailContent() {
   }, [recipe, isUserLoggedIn, currentUserContact]);
 
   useEffect(() => {
-    // 🌟 อัปเกรด: แยกประวัติการเข้าชมเป็นของใครของมัน (เก็บใน Local เหมือนเดิม แต่ตั้งชื่อกล่องใหม่)
     if (recipe && isUserLoggedIn && currentUserContact) {
       const timer = setTimeout(() => {
         const historyKey = `historyRecipes_${currentUserContact}`;
@@ -249,7 +275,7 @@ function RecipeDetailContent() {
           .from('favorites')
           .delete()
           .eq('name', recipe.name)
-          .eq('user_contact', currentUserContact); // 🚨 ลบเฉพาะของคนคนนี้เท่านั้น
+          .eq('user_contact', currentUserContact);
 
         if (error) throw error;
         setIsFavorite(false);
@@ -264,7 +290,7 @@ function RecipeDetailContent() {
             steps: recipe.steps || [],
             health_risks: [],
             image_url: recipe.displayImage,
-            user_contact: currentUserContact // 🚨 บันทึกด้วยว่าหัวใจดวงนี้เป็นของใคร!
+            user_contact: currentUserContact
           }]);
 
         if (error) throw error;
@@ -288,7 +314,7 @@ function RecipeDetailContent() {
             <div className="w-24 h-24 bg-orange-100 rounded-full flex items-center justify-center text-5xl mb-6 animate-bounce">🎲</div>
             <h1 className="text-3xl font-extrabold text-gray-900 mb-3">มื้อนี้กินอะไรดี?</h1>
             <p className="text-gray-500 mb-8 text-sm leading-relaxed">
-              หากเลือกไม่ถูกว่าจะกินอะไร ให้ระบบ AI สุ่มเลือกเมนูอาหารที่อร่อย พร้อมเช็คความปลอดภัยต่อสุขภาพของคุณให้แบบอัตโนมัติ!
+              หากเลือกไม่ถูกว่าจะกินอะไร ให้ระบบสุ่มเลือกเมนูอาหารที่อร่อย พร้อมเช็คความปลอดภัยต่อสุขภาพของคุณให้แบบอัตโนมัติ!
             </p>
             <button
               onClick={handleRandomRecipe}
@@ -312,6 +338,45 @@ function RecipeDetailContent() {
       </div>
     );
   }
+
+  // 🌟 ประมวลผลวัตถุดิบและคำนวณวัตถุดิบทดแทนจาก lib/healthRules
+  const bmiNumber = userBMIStatus && (userBMIStatus.includes("อ้วน") || userBMIStatus.includes("ท้วม")) ? 26 : 21;
+  const { safeIngredients } = (recipe && isUserLoggedIn)
+    ? checkIngredientsSafety(recipe.ingredients || [], {
+        allergies: userAllergies,
+        chronicDiseases: userDiseases,
+        bmi: bmiNumber
+      })
+    : { safeIngredients: recipe.ingredients || [] };
+
+  // 🧊 คำนวณวัตถุดิบที่ขาด และสัดส่วนความพร้อมในตู้เย็น
+  const rawIngredients = recipe.ingredients || [];
+  const missingIngredients: string[] = [];
+  const availableIngredients: string[] = [];
+
+  rawIngredients.forEach((ing) => {
+    const isAvailable = userFridge.some((fItem) => fItem && (ing.includes(fItem) || fItem.includes(ing)));
+    if (isAvailable) {
+      availableIngredients.push(ing);
+    } else {
+      missingIngredients.push(ing);
+    }
+  });
+
+  const readyPercentage = rawIngredients.length > 0 
+    ? Math.round((availableIngredients.length / rawIngredients.length) * 100) 
+    : 0;
+
+  // หาคำแนะนำปรับสูตรสำหรับของที่ขาด
+  const missingSubstitutes: { missing: string; replaceWith: string }[] = [];
+  missingIngredients.forEach((missingItem) => {
+    for (const [key, replaceWith] of Object.entries(missingSubstituteMap)) {
+      if (missingItem.includes(key)) {
+        missingSubstitutes.push({ missing: key, replaceWith });
+        break;
+      }
+    }
+  });
 
   let allergicIngredients: string[] = [];
   const diseaseWarnings: { disease: string; ingredients: string[] }[] = [];
@@ -337,7 +402,7 @@ function RecipeDetailContent() {
                         recipe.ingredients?.some(ing => spicyKeywords.some(keyword => ing.includes(keyword)));
         if (isSpicy) ageWarnings.push("เมนูนี้อาจมีรสเผ็ดหรือเครื่องเทศจัดเกินไปสำหรับวัยเด็กครับ 👶");
       } else if (userAge >= 60) {
-        const isHard = hardToChewKeywords.some(keyword => recipe.name.includes(keyword)) ||
+        const isHard = hardToChewKeywords.some(keyword => recipe.name.includes(keyword)) || 
                        recipe.ingredients?.some(ing => hardToChewKeywords.some(keyword => ing.includes(keyword)));
         if (isHard) ageWarnings.push("เมนูนี้มีของทอดกรอบหรือของแข็ง อาจเคี้ยวและย่อยยากสำหรับวัยเก๋าครับ 👴👵");
       }
@@ -382,7 +447,7 @@ function RecipeDetailContent() {
             <div className="px-5 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
               <div className={`font-bold flex items-center gap-3 ${hasAllergy ? 'text-red-600' : 'text-orange-600'}`}>
                 <span className="text-2xl animate-pulse">{hasAllergy ? '🚨' : '⚠️'}</span>
-                <span>AI เตือนภัย: เมนูนี้มีความเสี่ยงต่อสุขภาพของคุณ</span>
+                <span>ระบบตรวจพบข้อจำกัดสุขภาพ: ปรับรายการวัตถุดิบทดแทนให้แล้ว</span>
               </div>
               <button onClick={() => setIsWarningOpen(!isWarningOpen)} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${hasAllergy ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
                 {isWarningOpen ? 'ซ่อนคำอธิบาย' : 'ดูคำอธิบาย'}
@@ -395,7 +460,7 @@ function RecipeDetailContent() {
                   {hasAllergy && (
                     <div>
                       <h4 className="font-extrabold text-red-700 mb-2">🔴 อาการแพ้อาหาร</h4>
-                      <p className="text-red-600 text-sm ml-8 font-semibold">พบส่วนผสมที่คุณแพ้ คือ {allergicIngredients.join(", ")}</p>
+                      <p className="text-red-600 text-sm ml-8 font-semibold">พบส่วนผสมที่คุณแพ้ คือ {allergicIngredients.join(", ")} (ระบบทำการปรับเปลี่ยนวัตถุดิบทดแทนให้ด้านล่าง)</p>
                     </div>
                   )}
                   {hasDiseaseRisk && (
@@ -433,7 +498,7 @@ function RecipeDetailContent() {
 
         {isUserLoggedIn && isSafe && (
           <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-4 rounded-2xl font-bold mb-6 text-center text-sm shadow-sm flex items-center justify-center gap-2">
-            <span>💚</span> AI ตรวจสอบแล้ว: เมนูนี้ปลอดภัยต่อสุขภาพของคุณครับ {isHalalMode && <span className="bg-green-600 text-white px-2 py-0.5 rounded text-xs ml-1">โหมดฮาลาล</span>}
+            <span>💚</span> ระบบตรวจสอบแล้ว: เมนูนี้ปลอดภัยต่อสุขภาพของคุณครับ {isHalalMode && <span className="bg-green-600 text-white px-2 py-0.5 rounded text-xs ml-1">โหมดฮาลาล</span>}
           </div>
         )}
 
@@ -446,8 +511,8 @@ function RecipeDetailContent() {
         {!isUserLoggedIn && (
            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-2xl font-bold mb-6 text-center text-sm shadow-sm flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-xl">🤖</span>
-              <span>เข้าสู่ระบบเพื่อใช้งาน AI วิเคราะห์ความเสี่ยงสุขภาพและบันทึกรายการโปรด</span>
+              <span className="text-xl">📋</span>
+              <span>เข้าสู่ระบบเพื่อวิเคราะห์ความเสี่ยงสุขภาพและบันทึกรายการโปรด</span>
             </div>
             <button onClick={() => router.push("/login")} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg transition-colors shadow-sm">
               เข้าสู่ระบบ
@@ -458,10 +523,16 @@ function RecipeDetailContent() {
         <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 p-6 md:p-8">
           <div className="flex flex-col md:flex-row gap-8 mb-10">
             <div className="relative w-full md:w-1/2 h-64 bg-gray-100 rounded-3xl overflow-hidden shadow-sm flex items-center justify-center">
+              {/* Badge แสดงความพร้อมของวัตถุดิบในตู้เย็น */}
+              {userFridge.length > 0 && (
+                <div className="absolute top-4 right-4 z-20 bg-[#f26522] text-white text-xs font-extrabold px-3 py-1.5 rounded-full shadow-md">
+                  พร้อม {readyPercentage}%
+                </div>
+              )}
               {!imageLoaded && !imageError && (
                 <div className="absolute flex flex-col items-center justify-center text-gray-400">
                   <div className="animate-spin rounded-full h-8 w-8 border-4 border-[#f26522] border-t-transparent mb-2"></div>
-                  <span className="text-sm font-bold">AI กำลังปรุงภาพ...</span>
+                  <span className="text-sm font-bold">กำลังโหลดภาพ...</span>
                 </div>
               )}
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -503,16 +574,43 @@ function RecipeDetailContent() {
             </div>
           </div>
 
+          {/* 🌟 กล่องแสดงรายการวัตถุดิบที่ขาด และคำแนะนำปรับสูตรเหมือนรูปแรก */}
+          {userFridge.length > 0 && missingIngredients.length > 0 && (
+            <div className="mb-8 p-5 bg-[#fffaf5] border border-orange-200/80 rounded-2xl shadow-sm">
+              <div className="text-red-500 font-bold text-sm mb-3 leading-relaxed">
+                <span className="mr-1">❌</span> <strong>ขาด:</strong> {missingIngredients.join(", ")}
+              </div>
+
+              {missingSubstitutes.length > 0 && (
+                <div className="bg-[#fff6ea] p-4 rounded-xl border border-orange-100">
+                  <div className="text-orange-900 font-extrabold text-sm mb-2 flex items-center gap-1.5">
+                    <span>💡</span> คำแนะนำปรับสูตร:
+                  </div>
+                  <div className="space-y-1.5 text-xs text-orange-950">
+                    {missingSubstitutes.map((sub, idx) => (
+                      <p key={idx} className="leading-relaxed">
+                        ขาด <strong>{sub.missing}</strong> ➔ ใช้: <span className="font-semibold text-orange-800">{sub.replaceWith}</span>
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 📋 รายการวัตถุดิบที่ต้องใช้ */}
           <div className="mb-10">
             <h2 className="text-xl font-bold text-gray-800 mb-5 border-l-4 border-[#f26522] pl-3">📋 วัตถุดิบที่ต้องใช้</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-orange-50/50 p-5 rounded-2xl">
-              {recipe.ingredients?.map((ing: string, i: number) => {
+              {safeIngredients.map((ing: string, i: number) => {
+                const isReplaced = ing.includes("(เปลี่ยนเป็น:");
                 const isAllergy = isUserLoggedIn && userAllergies.some(allergy => ing.includes(allergy));
                 const isDiseaseRisk = isUserLoggedIn && diseaseWarnings.some(dw => dw.ingredients.includes(ing));
+
                 return (
-                  <div key={i} className="flex items-center gap-3 text-gray-700 font-medium">
-                    <div className="w-2 h-2 bg-[#f26522] rounded-full"></div>
-                    <span className={isAllergy ? "text-red-500 font-extrabold" : (isDiseaseRisk ? "text-orange-500 font-extrabold" : "")}>
+                  <div key={i} className="flex items-start gap-3 text-gray-700 font-medium">
+                    <div className="w-2 h-2 bg-[#f26522] rounded-full mt-2"></div>
+                    <span className={isReplaced ? "text-orange-700 font-bold bg-orange-100/80 px-2 py-1 rounded-lg border border-orange-200" : (isAllergy ? "text-red-500 font-extrabold" : (isDiseaseRisk ? "text-orange-500 font-extrabold" : ""))}>
                       {ing} {isAllergy && " 🚨"} {isDiseaseRisk && !isAllergy && " ⚠️"}
                     </span>
                   </div>
@@ -549,7 +647,6 @@ function RecipeDetailContent() {
                 <span>🎲</span> สุ่มเมนูอาหารอื่น
               </button>
               
-              {/* 🌟 จุดที่แก้ที่ 2: โค้ดปุ่มกลับหน้าเดิมแบบฉลาด (เปลี่ยนข้อความอัตโนมัติ) */}
               {(() => {
                 const fromPage = searchParams.get("from") || "/recipe1";
                 
