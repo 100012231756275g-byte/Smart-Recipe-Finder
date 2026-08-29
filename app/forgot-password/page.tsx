@@ -1,31 +1,25 @@
+// app/forgot-password/page.tsx
 "use client";
 
-import { useState } from "react"; // 🌟 เอา useEffect ออกไปแล้ว โค้ดจะสะอาดขึ้น
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@supabase/supabase-js";
-
-// 🌟 ตั้งค่า Supabase
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
   
-  // State ของฟอร์มเบอร์โทร
+  // State ฟอร์มเบอร์โทร
   const [phoneNumber, setPhoneNumber] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  // 🌟 State สำหรับควบคุม Pop-up OTP
+  // State Modal OTP
   const [showOTPModal, setShowOTPModal] = useState(false);
   const [otp, setOtp] = useState("");
   const [otpError, setOtpError] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
 
-  // ❌ ลบ useEffect ที่เป็นตัวการทำ Error ทิ้งไปแล้วครับ!
-
+  // 🌟 ฟังก์ชันส่ง OTP เข้าเบอร์จริงผ่าน ThaiBulkSMS API
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -39,20 +33,22 @@ export default function ForgotPasswordPage() {
     setErrorMessage("");
 
     try {
-      const formatPhone = "+66" + phoneNumber.substring(1);
-      
-      const { error } = await supabase.auth.signInWithOtp({ phone: formatPhone });
-      if (error) throw error;
+      const res = await fetch("/api/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phoneNumber: phoneNumber.trim() }),
+      });
 
-      setShowOTPModal(true);
+      const data = await res.json();
 
+      if (res.ok) {
+        setShowOTPModal(true);
+      } else {
+        setErrorMessage(data.error || "ไม่สามารถส่ง OTP ได้ กรุณาลองใหม่อีกครั้ง");
+      }
     } catch (error) {
-      const errMsg = error instanceof Error ? error.message : String(error);
-      console.error("OTP Error:", errMsg);
-      
-      // 🚨 บังคับเปิด Pop-up โชว์ Flow สำหรับพรีเซนต์
-      setShowOTPModal(true);
-      
+      console.error("Send OTP Error:", error);
+      setErrorMessage("เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ");
     } finally {
       setIsLoading(false);
     }
@@ -65,29 +61,41 @@ export default function ForgotPasswordPage() {
     }
   };
 
-  // 🌟 ฟังก์ชันจัดการตอนกดปุ่ม "ยืนยัน OTP" ใน Pop-up
+  // 🌟 ฟังก์ชันยืนยัน OTP กับระบบจริง
   const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsVerifying(true);
     setOtpError("");
 
-    // 🚨 ระบบจำลอง (Mockup) สำหรับพรีเซนต์อาจารย์
-    setTimeout(() => {
-      if (otp === "123456") {
+    try {
+      const res = await fetch("/api/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phoneNumber: phoneNumber.trim(), otp: otp.trim() }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
         setShowOTPModal(false);
-        // พุ่งไปหน้าตั้งรหัสผ่านใหม่
-        router.push("/reset-password"); 
+        // บันทึกเบอร์ที่ผ่านการยืนยันแล้ว และพุ่งไปหน้าตั้งรหัสผ่านใหม่
+        sessionStorage.setItem("reset_password_phone", phoneNumber.trim());
+        router.push("/reset-password");
       } else {
-        setOtpError("รหัส OTP ไม่ถูกต้อง (สำหรับพรีเซนต์ให้ลองใส่ 123456)");
+        setOtpError(data.error || "รหัส OTP ไม่ถูกต้อง");
       }
+    } catch (error) {
+      console.error("Verify OTP Error:", error);
+      setOtpError("ระบบตรวจสอบขัดข้อง");
+    } finally {
       setIsVerifying(false);
-    }, 1000);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 relative">
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 relative font-sans">
       
-      {/* ---------------- ฟอร์มหลัก (ลืมรหัสผ่าน) ---------------- */}
+      {/* ฟอร์มกรอกเบอร์โทร */}
       <div className="bg-white w-full max-w-lg rounded-[2rem] shadow-xl relative px-8 py-14 md:px-16 text-center z-10 animate-fade-in-up">
         
         <button 
@@ -100,16 +108,16 @@ export default function ForgotPasswordPage() {
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-black tracking-wide mb-3">ลืมรหัสผ่าน?</h2>
           <p className="text-gray-600 text-sm md:text-base">
-            กรุณากรอกเบอร์โทรศัพท์ของคุณเพื่อรับรหัสยืนยัน OTP
+            กรุณากรอกเบอร์โทรศัพท์ของคุณเพื่อรับรหัสยืนยัน OTP ผ่าน SMS
           </p>
         </div>
 
         <form onSubmit={handleSendOTP} className="flex flex-col gap-5">
           <div>
             <input
-              type="tel" // 🌟 เปลี่ยนเป็น tel เพื่อให้คีย์บอร์ดมือถือเด้งตัวเลข
-              autoComplete="off" // 🌟 สั่งเบราว์เซอร์ห้ามจำเบอร์เก่า!
-              placeholder="เบอร์โทรศัพท์"
+              type="tel"
+              autoComplete="off"
+              placeholder="เบอร์โทรศัพท์ (10 หลัก)"
               value={phoneNumber}
               onChange={handlePhoneChange}
               className="w-full bg-[#E5E7EB] text-center text-gray-800 placeholder-gray-500 rounded-full px-6 py-4 focus:outline-none focus:ring-2 focus:ring-[#f26522] text-lg font-medium tracking-widest"
@@ -118,7 +126,7 @@ export default function ForgotPasswordPage() {
             />
           </div>
 
-          <div className="h-4">
+          <div className="min-h-[20px]">
             {errorMessage && (
               <p className="text-red-500 text-sm font-medium animate-pulse">{errorMessage}</p>
             )}
@@ -131,7 +139,7 @@ export default function ForgotPasswordPage() {
               ${isLoading || phoneNumber.length < 10 ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#f26522] hover:bg-orange-600 hover:scale-[1.02]'}`}
           >
             {isLoading ? (
-              <><span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>กำลังส่งรหัส...</>
+              <><span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span> กำลังส่งรหัส SMS...</>
             ) : "ส่งรหัส OTP"}
           </button>
         </form>
@@ -143,7 +151,7 @@ export default function ForgotPasswordPage() {
         </div>
       </div>
 
-      {/* ---------------- 🌟 POP-UP (Modal) สำหรับกรอก OTP 🌟 ---------------- */}
+      {/* POP-UP Modal กรอกรหัส OTP */}
       {showOTPModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl animate-fade-in-up">
@@ -154,7 +162,7 @@ export default function ForgotPasswordPage() {
             
             <h3 className="text-2xl font-bold text-gray-800 mb-2">กรอกรหัส OTP</h3>
             <p className="text-gray-500 text-sm mb-6">
-              เราได้ส่งรหัส 6 หลักไปที่เบอร์<br/>
+              เราได้ส่ง SMS รหัส 6 หลักไปที่เบอร์<br/>
               <span className="font-bold text-[#f26522]">{phoneNumber}</span>
             </p>
 
@@ -162,12 +170,13 @@ export default function ForgotPasswordPage() {
               <input
                 type="text"
                 maxLength={6}
-                autoComplete="off" // 🌟 กันจำ OTP เก่า
-                placeholder="123456"
+                autoComplete="off"
+                placeholder="• • • • • •"
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
                 className="w-full bg-gray-50 border border-gray-200 text-center text-2xl tracking-[0.5em] text-gray-800 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#f26522]"
                 required
+                autoFocus
               />
 
               {otpError && <p className="text-red-500 text-xs font-bold">{otpError}</p>}
