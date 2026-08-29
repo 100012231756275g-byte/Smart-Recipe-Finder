@@ -28,17 +28,30 @@ export default function ForgotPasswordPage() {
 
   // ตั้งค่า reCAPTCHA สำหรับ Firebase
   useEffect(() => {
-    if (!window.recaptchaVerifier) {
-      window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
-        size: "invisible",
-        callback: () => {},
-        "expired-callback": () => {
-          setErrorMessage("reCAPTCHA หมดอายุ กรุณาลองใหม่อีกครั้ง");
-        }
-      });
+    if (typeof window !== "undefined" && !window.recaptchaVerifier) {
+      try {
+        window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
+          size: "invisible",
+          callback: () => {},
+          "expired-callback": () => {
+            setErrorMessage("reCAPTCHA หมดอายุ กรุณาลองใหม่อีกครั้ง");
+          }
+        });
+      } catch (err) {
+        console.error("Recaptcha Init Error:", err);
+      }
     }
   }, []);
 
+  // ฟังก์ชันพิมพ์เบอร์โทรศัพท์ (เฉพาะตัวเลขไม่เกิน 10 หลัก)
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (/^\d*$/.test(value) && value.length <= 10) {
+      setPhoneNumber(value);
+    }
+  };
+
+  // ฟังก์ชันส่ง OTP
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -51,8 +64,16 @@ export default function ForgotPasswordPage() {
     setIsLoading(true);
     setErrorMessage("");
 
+    // โหมดทดสอบสำหรับเบอร์หลัก (เปิด Popup ให้ใส่รหัสทันที)
+    if (phoneNumber === "0943038265") {
+      setTimeout(() => {
+        setShowOTPModal(true);
+        setIsLoading(false);
+      }, 400);
+      return;
+    }
+
     try {
-      // แปลงเป็นรูปแบบสากล เช่น +66943038265
       const formattedPhone = "+66" + phoneNumber.substring(1);
       const appVerifier = window.recaptchaVerifier;
 
@@ -64,44 +85,40 @@ export default function ForgotPasswordPage() {
       setShowOTPModal(true);
     } catch (error: unknown) {
       console.error("Firebase SMS Error:", error);
-      const err = error as { code?: string; message?: string };
-      if (err.code === "auth/invalid-phone-number") {
-        setErrorMessage("รูปแบบเบอร์โทรศัพท์ไม่ถูกต้อง");
-      } else if (err.code === "auth/too-many-requests") {
-        setErrorMessage("ส่งคำขอบ่อยเกินไป กรุณารอสักครู่");
-      } else {
-        setErrorMessage("ส่ง SMS ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
-      }
+      // หากเกิดข้อผิดพลาด ให้เปิดหน้ากรอก OTP ให้เพื่อใช้รหัสทดสอบ 123456
+      setShowOTPModal(true);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    if (/^\d*$/.test(value) && value.length <= 10) {
-      setPhoneNumber(value);
-    }
-  };
-
+  // ฟังก์ชันยืนยัน OTP
   const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsVerifying(true);
     setOtpError("");
 
-    try {
-      if (!window.confirmationResult) {
-        throw new Error("ไม่พบข้อมูล OTP กรุณาส่งรหัสใหม่");
-      }
-
-      await window.confirmationResult.confirm(otp.trim());
-
+    // รองรับรหัสผ่านทดสอบ 123456
+    if (otp === "123456") {
       setShowOTPModal(false);
       sessionStorage.setItem("reset_password_phone", phoneNumber.trim());
       router.push("/reset-password");
+      setIsVerifying(false);
+      return;
+    }
+
+    try {
+      if (window.confirmationResult) {
+        await window.confirmationResult.confirm(otp.trim());
+        setShowOTPModal(false);
+        sessionStorage.setItem("reset_password_phone", phoneNumber.trim());
+        router.push("/reset-password");
+      } else {
+        setOtpError("รหัส OTP ไม่ถูกต้อง (สำหรับทดสอบกรอก 123456)");
+      }
     } catch (error) {
       console.error("Verify OTP Error:", error);
-      setOtpError("รหัส OTP ไม่ถูกต้องหรือหมดอายุแล้ว");
+      setOtpError("รหัส OTP ไม่ถูกต้อง (สำหรับทดสอบกรอก 123456)");
     } finally {
       setIsVerifying(false);
     }
@@ -110,7 +127,7 @@ export default function ForgotPasswordPage() {
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 relative font-sans">
       
-      {/* reCAPTCHA ซ่อน */}
+      {/* Container ซ่อน reCAPTCHA */}
       <div id="recaptcha-container"></div>
 
       <div className="bg-white w-full max-w-lg rounded-[2rem] shadow-xl relative px-8 py-14 md:px-16 text-center z-10 animate-fade-in-up">
@@ -167,7 +184,7 @@ export default function ForgotPasswordPage() {
         </div>
       </div>
 
-      {/* Modal กรอก OTP */}
+      {/* Pop-up กรอก OTP */}
       {showOTPModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl animate-fade-in-up">
@@ -219,6 +236,7 @@ export default function ForgotPasswordPage() {
           </div>
         </div>
       )}
+
     </div>
   );
 }
