@@ -651,26 +651,23 @@ export default function CalculatePage() {
                 </div>
               </div>
 
-              {/* 🌟 กล่องทางลัด: เลือกจาก 169 เมนูใน Supabase */}
-              <div className="bg-orange-50/70 p-4 rounded-2xl border border-orange-200 flex flex-col md:flex-row items-center gap-3">
-                <span className="text-xs font-bold text-orange-900 flex-shrink-0 flex items-center gap-1.5">
-                  <span>📖</span> ดึงวัตถุดิบจากเมนูในฐานข้อมูล ({supabaseRecipes.length || 169} เมนู):
-                </span>
-                <select
-                  onChange={(e) => handleSelectSupabaseRecipe(e.target.value)}
-                  defaultValue=""
-                  className="w-full bg-white border border-orange-200 rounded-xl px-4 py-2 text-sm font-bold text-gray-700 focus:outline-none focus:border-[#f26522] shadow-sm cursor-pointer"
-                >
-                  <option value="" disabled>
-                    {isLoadingRecipes ? "กำลังโหลดรายชื่อเมนูจาก Supabase..." : "-- คลิกเพื่อเลือกเมนูอาหาร --"}
-                  </option>
-                  {supabaseRecipes.map((r, idx) => (
-                    <option key={idx} value={r.name}>
-                      🍳 {r.name} {r.kcal ? `(${r.kcal})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* 🌟 กล่องทางลัด: เลือกจากเมนูในฐานข้อมูล */}
+              <div className="bg-orange-50/70 p-4 rounded-2xl border border-orange-200">
+               <select
+                onChange={(e) => handleSelectSupabaseRecipe(e.target.value)}
+                defaultValue=""
+                className="w-full bg-white border border-orange-200 rounded-xl px-4 py-2.5 text-sm font-bold text-gray-700 focus:outline-none focus:border-[#f26522] shadow-sm cursor-pointer"
+              >
+               <option value="" disabled>
+                 {isLoadingRecipes ? "กำลังโหลดรายชื่อเมนู..." : "-- คลิกเพื่อเลือกเมนูอาหาร --"}
+               </option>
+                 {supabaseRecipes.map((r, idx) => (
+               <option key={idx} value={r.name}>
+                🍳 {r.name} {r.kcal ? `(${r.kcal})` : ''}
+                </option>
+              ))}
+               </select>
+            </div>
             </div>
 
             {/* ฟอร์มเลือกและเพิ่มวัตถุดิบเองทีละอย่าง */}
