@@ -1,25 +1,44 @@
 // app/forgot-password/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { auth } from "@/lib/firebase";
+import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from "firebase/auth";
+
+declare global {
+  interface Window {
+    recaptchaVerifier?: RecaptchaVerifier;
+    confirmationResult?: ConfirmationResult;
+  }
+}
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
   
-  // State ฟอร์มเบอร์โทร
   const [phoneNumber, setPhoneNumber] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  // State Modal OTP
   const [showOTPModal, setShowOTPModal] = useState(false);
   const [otp, setOtp] = useState("");
   const [otpError, setOtpError] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
 
-  // 🌟 ฟังก์ชันส่ง OTP เข้าเบอร์จริงผ่าน ThaiBulkSMS API
+  // ตั้งค่า reCAPTCHA สำหรับ Firebase
+  useEffect(() => {
+    if (!window.recaptchaVerifier) {
+      window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
+        size: "invisible",
+        callback: () => {},
+        "expired-callback": () => {
+          setErrorMessage("reCAPTCHA หมดอายุ กรุณาลองใหม่อีกครั้ง");
+        }
+      });
+    }
+  }, []);
+
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -33,22 +52,26 @@ export default function ForgotPasswordPage() {
     setErrorMessage("");
 
     try {
-      const res = await fetch("/api/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumber: phoneNumber.trim() }),
-      });
+      // แปลงเป็นรูปแบบสากล เช่น +66943038265
+      const formattedPhone = "+66" + phoneNumber.substring(1);
+      const appVerifier = window.recaptchaVerifier;
 
-      const data = await res.json();
+      if (!appVerifier) throw new Error("Recaptcha verifier not ready");
 
-      if (res.ok) {
-        setShowOTPModal(true);
+      const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
+      window.confirmationResult = confirmationResult;
+
+      setShowOTPModal(true);
+    } catch (error: unknown) {
+      console.error("Firebase SMS Error:", error);
+      const err = error as { code?: string; message?: string };
+      if (err.code === "auth/invalid-phone-number") {
+        setErrorMessage("รูปแบบเบอร์โทรศัพท์ไม่ถูกต้อง");
+      } else if (err.code === "auth/too-many-requests") {
+        setErrorMessage("ส่งคำขอบ่อยเกินไป กรุณารอสักครู่");
       } else {
-        setErrorMessage(data.error || "ไม่สามารถส่ง OTP ได้ กรุณาลองใหม่อีกครั้ง");
+        setErrorMessage("ส่ง SMS ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
       }
-    } catch (error) {
-      console.error("Send OTP Error:", error);
-      setErrorMessage("เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ");
     } finally {
       setIsLoading(false);
     }
@@ -61,32 +84,24 @@ export default function ForgotPasswordPage() {
     }
   };
 
-  // 🌟 ฟังก์ชันยืนยัน OTP กับระบบจริง
   const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsVerifying(true);
     setOtpError("");
 
     try {
-      const res = await fetch("/api/verify-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumber: phoneNumber.trim(), otp: otp.trim() }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        setShowOTPModal(false);
-        // บันทึกเบอร์ที่ผ่านการยืนยันแล้ว และพุ่งไปหน้าตั้งรหัสผ่านใหม่
-        sessionStorage.setItem("reset_password_phone", phoneNumber.trim());
-        router.push("/reset-password");
-      } else {
-        setOtpError(data.error || "รหัส OTP ไม่ถูกต้อง");
+      if (!window.confirmationResult) {
+        throw new Error("ไม่พบข้อมูล OTP กรุณาส่งรหัสใหม่");
       }
+
+      await window.confirmationResult.confirm(otp.trim());
+
+      setShowOTPModal(false);
+      sessionStorage.setItem("reset_password_phone", phoneNumber.trim());
+      router.push("/reset-password");
     } catch (error) {
       console.error("Verify OTP Error:", error);
-      setOtpError("ระบบตรวจสอบขัดข้อง");
+      setOtpError("รหัส OTP ไม่ถูกต้องหรือหมดอายุแล้ว");
     } finally {
       setIsVerifying(false);
     }
@@ -95,9 +110,10 @@ export default function ForgotPasswordPage() {
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 relative font-sans">
       
-      {/* ฟอร์มกรอกเบอร์โทร */}
+      {/* reCAPTCHA ซ่อน */}
+      <div id="recaptcha-container"></div>
+
       <div className="bg-white w-full max-w-lg rounded-[2rem] shadow-xl relative px-8 py-14 md:px-16 text-center z-10 animate-fade-in-up">
-        
         <button 
           onClick={() => router.push("/")}
           className="absolute top-6 right-6 bg-[#EF4444] hover:bg-red-600 text-white text-base font-medium py-2 px-6 rounded-[1rem] shadow-sm transition-transform hover:scale-105"
@@ -151,11 +167,10 @@ export default function ForgotPasswordPage() {
         </div>
       </div>
 
-      {/* POP-UP Modal กรอกรหัส OTP */}
+      {/* Modal กรอก OTP */}
       {showOTPModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl animate-fade-in-up">
-            
             <div className="w-16 h-16 bg-orange-100 text-[#f26522] rounded-full flex items-center justify-center text-3xl mx-auto mb-4">
               💬
             </div>
@@ -201,11 +216,9 @@ export default function ForgotPasswordPage() {
                 ยกเลิก / แก้ไขเบอร์โทร
               </button>
             </form>
-
           </div>
         </div>
       )}
-      
     </div>
   );
 }
