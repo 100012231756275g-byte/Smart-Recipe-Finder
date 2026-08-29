@@ -1,7 +1,7 @@
 // app/calculate/page.tsx
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
 // --- โครงสร้างข้อมูลสำหรับ AI Vision Scanner ---
 interface IngredientItem {
@@ -16,6 +16,14 @@ interface NutritionResult {
   carbs: number;
   fat: number;
   ingredients: IngredientItem[]; 
+}
+
+// --- โครงสร้างข้อมูลสำหรับ Recipe จาก Supabase ---
+interface DbRecipe {
+  id?: number | string;
+  name: string;
+  kcal?: string;
+  ingredients?: string[];
 }
 
 // --- โครงสร้างข้อมูลและฐานข้อมูลสำหรับ Manual Ingredient Calculator ---
@@ -35,22 +43,38 @@ const nutritionDB: Record<string, { cal: number; protein: number; fat: number; c
   "หมูสามชั้น": { cal: 518, protein: 9.3, fat: 53, carb: 0, unit: "กรัม", baseAmount: 100 },
   "หมูสับ": { cal: 260, protein: 17, fat: 21, carb: 0, unit: "กรัม", baseAmount: 100 },
   "กุ้งขาว": { cal: 99, protein: 24, fat: 0.3, carb: 0.2, unit: "กรัม", baseAmount: 100 },
+  "กุ้ง": { cal: 99, protein: 24, fat: 0.3, carb: 0.2, unit: "กรัม", baseAmount: 100 },
+  "ปลาหมึก": { cal: 92, protein: 15.6, fat: 1.4, carb: 3.1, unit: "กรัม", baseAmount: 100 },
+  "ปลา": { cal: 110, protein: 20, fat: 2.5, carb: 0, unit: "กรัม", baseAmount: 100 },
   "ไข่ไก่": { cal: 70, protein: 6, fat: 5, carb: 0.6, unit: "ฟอง", baseAmount: 1 },
   "ข้าวสวย": { cal: 130, protein: 2.7, fat: 0.3, carb: 28, unit: "กรัม", baseAmount: 100 },
-  "วุ้นเส้น (ต้มสุก)": { cal: 80, protein: 0.2, fat: 0.1, carb: 20, unit: "กรัม", baseAmount: 100 },
+  "วุ้นเส้น": { cal: 80, protein: 0.2, fat: 0.1, carb: 20, unit: "กรัม", baseAmount: 100 },
   "น้ำมันพืช": { cal: 120, protein: 0, fat: 14, carb: 0, unit: "ช้อนโต๊ะ", baseAmount: 1 },
+  "น้ำมัน": { cal: 120, protein: 0, fat: 14, carb: 0, unit: "ช้อนโต๊ะ", baseAmount: 1 },
   "น้ำตาลทราย": { cal: 48, protein: 0, fat: 0, carb: 12, unit: "ช้อนโต๊ะ", baseAmount: 1 },
+  "น้ำตาล": { cal: 48, protein: 0, fat: 0, carb: 12, unit: "ช้อนโต๊ะ", baseAmount: 1 },
   "น้ำปลา": { cal: 10, protein: 1.5, fat: 0, carb: 0.5, unit: "ช้อนโต๊ะ", baseAmount: 1 },
   "ซอสหอยนางรม": { cal: 15, protein: 0.5, fat: 0.2, carb: 3, unit: "ช้อนโต๊ะ", baseAmount: 1 },
   "ซีอิ๊วขาว": { cal: 8, protein: 1, fat: 0, carb: 1, unit: "ช้อนโต๊ะ", baseAmount: 1 },
+  "เต้าเจี้ยว": { cal: 25, protein: 2, fat: 1, carb: 2.5, unit: "ช้อนโต๊ะ", baseAmount: 1 },
   "กะทิ": { cal: 230, protein: 2.3, fat: 24, carb: 5.5, unit: "กรัม", baseAmount: 100 },
-  "ผักคะน้า / ผักสด": { cal: 22, protein: 2.2, fat: 0.7, carb: 3.8, unit: "กรัม", baseAmount: 100 },
+  "กระเทียม": { cal: 15, protein: 0.6, fat: 0.1, carb: 3.3, unit: "กรัม", baseAmount: 10 },
+  "พริกขี้หนู": { cal: 8, protein: 0.4, fat: 0.1, carb: 1.8, unit: "กรัม", baseAmount: 10 },
+  "มะนาว": { cal: 10, protein: 0.3, fat: 0.1, carb: 3, unit: "ลูก", baseAmount: 1 },
+  "หอมแดง": { cal: 12, protein: 0.3, fat: 0, carb: 2.7, unit: "กรัม", baseAmount: 15 },
+  "ถั่วลิสง": { cal: 160, protein: 7, fat: 14, carb: 5, unit: "กรัม", baseAmount: 30 },
+  "ตะไคร้": { cal: 10, protein: 0.2, fat: 0, carb: 2.5, unit: "กรัม", baseAmount: 20 },
+  "ผักคะน้า": { cal: 22, protein: 2.2, fat: 0.7, carb: 3.8, unit: "กรัม", baseAmount: 100 },
+  "ผักสด": { cal: 20, protein: 1.5, fat: 0.2, carb: 4, unit: "กรัม", baseAmount: 100 },
   "เต้าหู้ขาวแข็ง": { cal: 76, protein: 8, fat: 4.8, carb: 1.9, unit: "กรัม", baseAmount: 100 }
 };
 
 export default function CalculatePage() {
-  // 🌟 แถบสลับโหมดการทำงาน
-  const [activeMode, setActiveMode] = useState<"ai" | "manual">("ai");
+  const [activeMode, setActiveMode] = useState<"ai" | "manual">("manual");
+
+  // ================= State: ดึงเมนูจาก Supabase =================
+  const [supabaseRecipes, setSupabaseRecipes] = useState<DbRecipe[]>([]);
+  const [isLoadingRecipes, setIsLoadingRecipes] = useState(false);
 
   // ================= State: AI Scanner =================
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -78,6 +102,66 @@ export default function CalculatePage() {
     { name: "อกไก่", amount: 150, unit: "กรัม", calPerUnit: 1.65, protein: 0.31, fat: 0.036, carb: 0 },
     { name: "น้ำมันพืช", amount: 1, unit: "ช้อนโต๊ะ", calPerUnit: 120, protein: 0, fat: 14, carb: 0 }
   ]);
+
+  // 🌟 ดึงข้อมูล 169 เมนูจาก Supabase ผ่าน API
+  useEffect(() => {
+    const fetchRecipes = async () => {
+      setIsLoadingRecipes(true);
+      try {
+        const res = await fetch('/api/recipes?t=' + Date.now(), { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) setSupabaseRecipes(data);
+        }
+      } catch (err) {
+        console.error("ดึงข้อมูลเมนูอาหารไม่สำเร็จ:", err);
+      } finally {
+        setIsLoadingRecipes(false);
+      }
+    };
+    fetchRecipes();
+  }, []);
+
+  // 🌟 ฟังก์ชันเลือกเมนูจาก Supabase แล้วดึงวัตถุดิบทั้งหมดมาใส่ในหม้อทันที
+  const handleSelectSupabaseRecipe = (recipeName: string) => {
+    if (!recipeName) return;
+    const selected = supabaseRecipes.find(r => r.name === recipeName);
+    if (!selected || !selected.ingredients) return;
+
+    setCustomDishName(selected.name);
+
+    const generatedItems: ManualIngredientItem[] = selected.ingredients.map((ingName) => {
+      // ค้นหาฐานข้อมูลโภชนาการที่ใกล้เคียงที่สุด
+      const matchedKey = Object.keys(nutritionDB).find(k => ingName.includes(k) || k.includes(ingName));
+      const info = matchedKey ? nutritionDB[matchedKey] : null;
+
+      if (info) {
+        const defaultAmt = info.unit === "ช้อนโต๊ะ" || info.unit === "ฟอง" || info.unit === "ลูก" ? 1 : 50;
+        return {
+          name: ingName,
+          amount: defaultAmt,
+          unit: info.unit,
+          calPerUnit: info.cal / info.baseAmount,
+          protein: info.protein / info.baseAmount,
+          fat: info.fat / info.baseAmount,
+          carb: info.carb / info.baseAmount
+        };
+      } else {
+        // วัตถุดิบทั่วไป (ค่าเฉลี่ยโภชนาการ)
+        return {
+          name: ingName,
+          amount: 30,
+          unit: "กรัม",
+          calPerUnit: 0.8,
+          protein: 0.05,
+          fat: 0.02,
+          carb: 0.1
+        };
+      }
+    });
+
+    setManualIngList(generatedItems);
+  };
 
   // คำนวณผลรวมโภชนาการสำหรับโหมดกรอกเอง
   const manualTotalCal = Math.round(manualIngList.reduce((sum, item) => sum + (item.calPerUnit * item.amount), 0));
@@ -230,9 +314,10 @@ export default function CalculatePage() {
   const handleSaveToDiary = () => {
     if (!editableResult || !originalResult) return;
     const saveMethod = editableResult.calories !== originalResult.calories ? 'manual_edit' : 'ai_vision';
-  // eslint-disable-next-line react-hooks/purity
+    // eslint-disable-next-line react-hooks/purity
     const currentId = Date.now().toString();
     const currentTime = new Date().toISOString();
+
     const newLogEntry = {
       id: currentId,
       timestamp: currentTime,
@@ -293,12 +378,19 @@ export default function CalculatePage() {
     setManualIngList(prev => prev.filter((_, i) => i !== index));
   };
 
+  const handleUpdateManualItemAmount = (index: number, newAmt: number) => {
+    const updated = [...manualIngList];
+    updated[index].amount = Math.max(1, newAmt);
+    setManualIngList(updated);
+  };
+
   const handleSaveManualToDiary = () => {
     if (manualIngList.length === 0) {
       alert("กรุณาเพิ่มวัตถุดิบอย่างน้อย 1 รายการครับ");
       return;
     }
 
+   
     const currentId = Date.now().toString();
     const currentTime = new Date().toISOString();
 
@@ -341,7 +433,7 @@ export default function CalculatePage() {
           รู้แคลอรี่และสารอาหารทันที
         </h2>
 
-        {/* 🌟 แถบสลับโหมด (Mode Switcher) */}
+        {/* 🌟 แถบสลับโหมด */}
         <div className="inline-flex p-1.5 bg-gray-100/80 rounded-2xl border border-gray-200 shadow-inner max-w-md mx-auto mb-2">
           <button
             onClick={() => setActiveMode("ai")}
@@ -365,7 +457,6 @@ export default function CalculatePage() {
           </button>
         </div>
 
-        {/* ช่องค้นหาแบบ Manual (สำหรับโหมด AI) */}
         {activeMode === "ai" && (
           <form onSubmit={handleManualSearch} className="max-w-xl mx-auto relative mt-6">
             <input 
@@ -537,15 +628,17 @@ export default function CalculatePage() {
         )}
 
         {/* ========================================================= */}
-        {/* 🌟 2. โหมดคำนวณตามวัตถุดิบที่กรอกเอง (Manual Ingredient Calc) */}
+        {/* 🌟 2. โหมดคำนวณตามวัตถุดิบ (เชื่อม 169 เมนูจาก Supabase)       */}
         {/* ========================================================= */}
         {activeMode === "manual" && (
           <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 p-6 md:p-8 animate-fade-in">
+            
+            {/* Header & ชื่อเมนู */}
             <div className="border-b border-gray-100 pb-6 mb-6">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
                 <div>
                   <h3 className="text-2xl font-extrabold text-gray-900">คำนวณโภชนาการตามวัตถุดิบ</h3>
-                  <p className="text-gray-500 text-sm mt-1">เลือกวัตถุดิบและสัดส่วนที่ต้องการเพื่อดูผลรวมสารอาหารอย่างแม่นยำ</p>
+                  <p className="text-gray-500 text-sm mt-1">เลือกเมนูจากฐานข้อมูล 169 เมนู หรือเพิ่มวัตถุดิบเองเพื่อคำนวณแคลอรี่อย่างละเอียด</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-gray-500">ชื่อเมนู:</span>
@@ -557,11 +650,32 @@ export default function CalculatePage() {
                   />
                 </div>
               </div>
+
+              {/* 🌟 กล่องทางลัด: เลือกจาก 169 เมนูใน Supabase */}
+              <div className="bg-orange-50/70 p-4 rounded-2xl border border-orange-200 flex flex-col md:flex-row items-center gap-3">
+                <span className="text-xs font-bold text-orange-900 flex-shrink-0 flex items-center gap-1.5">
+                  <span>📖</span> ดึงวัตถุดิบจากเมนูในฐานข้อมูล ({supabaseRecipes.length || 169} เมนู):
+                </span>
+                <select
+                  onChange={(e) => handleSelectSupabaseRecipe(e.target.value)}
+                  defaultValue=""
+                  className="w-full bg-white border border-orange-200 rounded-xl px-4 py-2 text-sm font-bold text-gray-700 focus:outline-none focus:border-[#f26522] shadow-sm cursor-pointer"
+                >
+                  <option value="" disabled>
+                    {isLoadingRecipes ? "กำลังโหลดรายชื่อเมนูจาก Supabase..." : "-- คลิกเพื่อเลือกเมนูอาหาร --"}
+                  </option>
+                  {supabaseRecipes.map((r, idx) => (
+                    <option key={idx} value={r.name}>
+                      🍳 {r.name} {r.kcal ? `(${r.kcal})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            {/* ฟอร์มเลือกและเพิ่มวัตถุดิบ */}
-            <div className="bg-orange-50/60 p-5 rounded-2xl border border-orange-100 mb-8">
-              <h4 className="font-extrabold text-gray-800 text-sm mb-3">➕ เพิ่มวัตถุดิบลงในหม้อคำนวณ</h4>
+            {/* ฟอร์มเลือกและเพิ่มวัตถุดิบเองทีละอย่าง */}
+            <div className="bg-gray-50/70 p-5 rounded-2xl border border-gray-100 mb-8">
+              <h4 className="font-extrabold text-gray-800 text-sm mb-3">➕ เพิ่มวัตถุดิบเสริม</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs font-bold text-gray-600 mb-1 block">เลือกวัตถุดิบ</label>
@@ -570,7 +684,7 @@ export default function CalculatePage() {
                     onChange={(e) => {
                       setSelectedDbIng(e.target.value);
                       const unit = nutritionDB[e.target.value]?.unit;
-                      setManualInputAmount(unit === "ช้อนโต๊ะ" || unit === "ฟอง" ? 1 : 100);
+                      setManualInputAmount(unit === "ช้อนโต๊ะ" || unit === "ฟอง" || unit === "ลูก" ? 1 : 100);
                     }}
                     className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-medium focus:outline-none focus:border-[#f26522]"
                   >
@@ -624,22 +738,31 @@ export default function CalculatePage() {
               </div>
             </div>
 
-            {/* รายการวัตถุดิบที่อยู่ในหม้อ */}
+            {/* รายการวัตถุดิบในหม้อ */}
             <div>
               <h4 className="font-extrabold text-gray-800 text-base mb-4 border-l-4 border-[#f26522] pl-3">
                 📋 รายการวัตถุดิบในหม้อ ({manualIngList.length} อย่าง)
               </h4>
               {manualIngList.length === 0 ? (
                 <div className="bg-gray-50 p-8 rounded-2xl text-center text-gray-400 font-medium">
-                  ยังไม่มีวัตถุดิบในรายการ ลองเลือกเพิ่มวัตถุดิบด้านบนดูครับ
+                  ยังไม่มีวัตถุดิบในรายการ ลองเลือกเมนูจากแถบด้านบนดูครับ
                 </div>
               ) : (
                 <div className="divide-y divide-gray-100 border border-gray-100 rounded-2xl overflow-hidden mb-6">
                   {manualIngList.map((item, idx) => (
                     <div key={idx} className="flex items-center justify-between p-4 bg-white hover:bg-gray-50/80 transition-colors">
-                      <div>
+                      <div className="flex items-center gap-3">
                         <span className="font-bold text-gray-800 text-sm">{item.name}</span>
-                        <span className="text-xs text-gray-400 ml-2">({item.amount} {item.unit})</span>
+                        <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg px-2 py-0.5">
+                          <input
+                            type="number"
+                            min="1"
+                            value={item.amount}
+                            onChange={(e) => handleUpdateManualItemAmount(idx, Number(e.target.value))}
+                            className="w-12 text-center text-xs font-bold text-[#f26522] bg-transparent outline-none hide-arrows"
+                          />
+                          <span className="text-[10px] text-gray-400 font-bold ml-1">{item.unit}</span>
+                        </div>
                       </div>
                       <div className="flex items-center gap-4">
                         <span className="font-extrabold text-[#f26522] text-sm">
