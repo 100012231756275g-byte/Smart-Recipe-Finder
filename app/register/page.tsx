@@ -1,187 +1,239 @@
+// app/forgot-password/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@supabase/supabase-js";
+import { auth } from "@/lib/firebase";
+import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from "firebase/auth";
 
-// 🌟 Initialize Supabase Client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+declare global {
+  interface Window {
+    recaptchaVerifier?: RecaptchaVerifier;
+    confirmationResult?: ConfirmationResult;
+  }
+}
 
-export default function RegisterPage() {
+export default function ForgotPasswordPage() {
   const router = useRouter();
-
-  const [contact, setContact] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // 🧠 ฟังก์ชันคำนวณ Role อย่างเฉียบขาด
-  const determineRole = (value: string) => {
-    return value.trim().toLowerCase() === "admin" ? "admin" : "user";
+  const [showOTPModal, setShowOTPModal] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [otpError, setOtpError] = useState("");
+  const [isVerifying, setIsVerifying] = useState(false);
+
+  // ตั้งค่า reCAPTCHA
+  useEffect(() => {
+    if (typeof window !== "undefined" && !window.recaptchaVerifier) {
+      try {
+        window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
+          size: "invisible",
+          callback: () => {},
+          "expired-callback": () => {
+            setErrorMessage("reCAPTCHA หมดอายุ กรุณากดส่งใหม่อีกครั้ง");
+          }
+        });
+      } catch (err) {
+        console.error("Recaptcha Init Error:", err);
+      }
+    }
+  }, []);
+
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, "");
+    if (value.length <= 10) {
+      setPhoneNumber(value);
+    }
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
+  // ส่ง SMS เข้าโทรศัพท์จริง
+  const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (phoneNumber.length !== 10) {
+      setErrorMessage("กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก");
+      return;
+    }
+
+    setIsLoading(true);
     setErrorMessage("");
 
-    if (!contact || !username || !password) {
-      setErrorMessage("กรุณากรอกข้อมูลให้ครบทั้ง 3 ช่อง");
-      return;
-    }
-
-    const lowerContact = contact.trim().toLowerCase();
-    let authEmail = lowerContact;
-
-    // 🛡️ ตรรกะตรวจสอบรูปแบบข้อมูล
-    if (lowerContact === "admin") {
-       authEmail = "admin@cookcook.com";
-    } else if (lowerContact.includes("@") || /[a-zA-Z]/.test(lowerContact)) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(lowerContact)) {
-        setErrorMessage("รูปแบบอีเมลไม่ถูกต้อง");
-        return;
+    try {
+      const formattedPhone = "+66" + phoneNumber.substring(1);
+      
+      if (!window.recaptchaVerifier) {
+        window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
+          size: "invisible"
+        });
       }
-    } else {
-      const phoneRegex = /^\d{10}$/;
-      if (!phoneRegex.test(lowerContact)) {
-        setErrorMessage("เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลักเท่านั้น");
-        return;
+
+      const confirmationResult = await signInWithPhoneNumber(
+        auth, 
+        formattedPhone, 
+        window.recaptchaVerifier
+      );
+      
+      window.confirmationResult = confirmationResult;
+      setShowOTPModal(true);
+    } catch (error: unknown) {
+      console.error("Firebase SMS Error:", error);
+      const err = error as { code?: string; message?: string };
+      
+      if (err.code === "auth/invalid-phone-number") {
+        setErrorMessage("รูปแบบเบอร์โทรศัพท์ไม่ถูกต้อง");
+      } else if (err.code === "auth/too-many-requests") {
+        setErrorMessage("ส่ง SMS บ่อยเกินไป กรุณารอสักครู่");
+      } else if (err.code === "auth/quota-exceeded") {
+        setErrorMessage("โควตาส่ง SMS ฟรีของ Firebase เต็มสำหรับวันนี้");
+      } else {
+        setErrorMessage(`ส่ง SMS ไม่สำเร็จ (${err.code || "unknown error"})`);
       }
-      authEmail = `${lowerContact}@phone.local`;
+    } finally {
+      setIsLoading(false);
     }
+  };
 
-    if (username.length > 20) {
-      setErrorMessage("ชื่อผู้ใช้ต้องไม่เกิน 20 ตัวอักษร");
-      return;
-    }
-
-    setIsSubmitting(true);
-    const calculatedRole = determineRole(lowerContact);
+  // ยืนยันรหัส OTP จริงจาก SMS
+  const handleVerifyOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsVerifying(true);
+    setOtpError("");
 
     try {
-      // 🚀 1. ยิง API สมัครสมาชิกไปที่ Supabase
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: authEmail,
-        password: password,
-      });
-
-      if (authError) throw authError;
-
-      // 🚀 2. บันทึกข้อมูลโปรไฟล์และ Role ลงตาราง profiles
-      if (authData.user) {
-        const { error: profileError } = await supabase
-          .from("profiles")
-          .insert([
-            {
-              id: authData.user.id,
-              full_name: username,
-              role: calculatedRole,
-              status: "active"
-            }
-          ]);
-
-        if (profileError) {
-            console.error("Profile Insert Error:", profileError);
-            throw new Error("สร้างบัญชีสำเร็จ แต่ไม่สามารถสร้างโปรไฟล์ผู้ใช้ได้");
-        }
+      if (!window.confirmationResult) {
+        throw new Error("ไม่พบเซสชัน OTP กรุณากดส่งรหัสใหม่อีกครั้ง");
       }
 
-      alert(`สมัครสมาชิกสำเร็จ! คุณได้รับสิทธิ์: ${calculatedRole.toUpperCase()}`);
-      router.push("/login");
+      await window.confirmationResult.confirm(otp.trim());
 
+      setShowOTPModal(false);
+      sessionStorage.setItem("reset_password_phone", phoneNumber.trim());
+      router.push("/reset-password");
     } catch (error) {
-      console.error("Registration failed:", error);
-      const msg = error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการสมัครสมาชิก";
-      setErrorMessage(msg);
+      console.error("Verify OTP Error:", error);
+      setOtpError("รหัส OTP จาก SMS ไม่ถูกต้องหรือหมดอายุ");
     } finally {
-      setIsSubmitting(false);
+      setIsVerifying(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-lg rounded-[2rem] shadow-xl relative px-8 py-14 md:px-16">
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 relative font-sans">
+      
+      {/* Container สำหรับ Google reCAPTCHA */}
+      <div id="recaptcha-container"></div>
 
-        {/* ปุ่มปิด */}
-        <button
+      <div className="bg-white w-full max-w-lg rounded-[2rem] shadow-xl relative px-8 py-14 md:px-16 text-center z-10 animate-fade-in-up">
+        <button 
           onClick={() => router.push("/")}
           className="absolute top-6 right-6 bg-[#EF4444] hover:bg-red-600 text-white text-base font-medium py-2 px-6 rounded-[1rem] shadow-sm transition-transform hover:scale-105"
         >
           ปิด
         </button>
 
-        <div className="text-center mb-10">
-          <h2 className="text-3xl font-bold text-black tracking-wide">สมัครสมาชิก</h2>
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold text-black tracking-wide mb-3">ลืมรหัสผ่าน?</h2>
+          <p className="text-gray-600 text-sm md:text-base">
+            กรุณากรอกเบอร์โทรศัพท์ของคุณเพื่อรับรหัสยืนยัน OTP ผ่าน SMS จริง
+          </p>
         </div>
 
-        {/* 🔥 จุดที่ผมเอา handleRegister มาผูกกับ form ให้แล้ว! */}
-        <form onSubmit={handleRegister} className="flex flex-col gap-6">
+        <form onSubmit={handleSendOTP} className="flex flex-col gap-5">
           <div>
             <input
-              type="text"
-              placeholder="เบอร์โทรศัพท์/อีเมล (พิมพ์ admin เพื่อสิทธิ์สูงสุด)"
-              value={contact}
-              onChange={(e) => setContact(e.target.value)}
-              disabled={isSubmitting}
-              className="w-full bg-[#D9D9D9] text-gray-800 placeholder-gray-500 rounded-full px-6 py-4 focus:outline-none focus:ring-2 focus:ring-orange-400 disabled:opacity-50"
-            />
-          </div>
-          <div>
-            <input
-              type="text"
-              placeholder="ชื่อผู้ใช้"
-              value={username}
-              maxLength={20}
-              onChange={(e) => setUsername(e.target.value)}
-              disabled={isSubmitting}
-              className="w-full bg-[#D9D9D9] text-gray-800 placeholder-gray-500 rounded-full px-6 py-4 focus:outline-none focus:ring-2 focus:ring-orange-400 disabled:opacity-50"
-            />
-          </div>
-          <div>
-            <input
-              type="password"
-              placeholder="รหัสผ่าน (ขั้นต่ำ 6 ตัวอักษร)"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={isSubmitting}
-              className="w-full bg-[#D9D9D9] text-gray-800 placeholder-gray-500 rounded-full px-6 py-4 focus:outline-none focus:ring-2 focus:ring-orange-400 disabled:opacity-50"
+              type="tel"
+              autoComplete="off"
+              placeholder="เบอร์โทรศัพท์ (10 หลัก)"
+              value={phoneNumber}
+              onChange={handlePhoneChange}
+              className="w-full bg-[#E5E7EB] text-center text-gray-800 placeholder-gray-500 rounded-full px-6 py-4 focus:outline-none focus:ring-2 focus:ring-[#f26522] text-lg font-medium tracking-widest"
+              required
+              disabled={isLoading}
             />
           </div>
 
-          <div className="h-4">
+          <div className="min-h-[20px]">
             {errorMessage && (
-              <p className="text-red-500 text-sm text-center font-medium">
-                {errorMessage}
-              </p>
+              <p className="text-red-500 text-sm font-medium animate-pulse">{errorMessage}</p>
             )}
           </div>
 
-          <button
+          <button 
             type="submit"
-            disabled={isSubmitting}
-            className="w-full bg-[#f26522] hover:bg-orange-600 disabled:bg-gray-400 text-white text-lg font-bold rounded-full py-4 transition-transform hover:scale-[1.02] shadow-md flex justify-center items-center"
+            disabled={isLoading || phoneNumber.length < 10}
+            className={`w-full text-white text-lg font-bold rounded-full py-4 transition-all shadow-md flex items-center justify-center gap-2
+              ${isLoading || phoneNumber.length < 10 ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#f26522] hover:bg-orange-600 hover:scale-[1.02]'}`}
           >
-            {isSubmitting ? (
-              <span className="animate-pulse">กำลังประมวลผล...</span>
-            ) : (
-              "สมัครสมาชิก"
-            )}
+            {isLoading ? (
+              <><span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span> กำลังส่ง SMS จริง...</>
+            ) : "ส่งรหัส OTP"}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-gray-600">
-          มีบัญชีอยู่แล้ว?{" "}
-          <Link href="/login" className="text-[#f26522] font-bold hover:underline">
-            กลับไปหน้าเข้าสู่ระบบ
+        <div className="mt-8">
+          <Link href="/login" className="text-gray-500 hover:text-gray-800 font-medium transition-colors inline-flex items-center gap-1">
+            <span>&larr;</span> กลับไปหน้าเข้าสู่ระบบ
           </Link>
-        </p>
-
+        </div>
       </div>
+
+      {/* Pop-up กรอก OTP */}
+      {showOTPModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl animate-fade-in-up">
+            <div className="w-16 h-16 bg-orange-100 text-[#f26522] rounded-full flex items-center justify-center text-3xl mx-auto mb-4">
+              💬
+            </div>
+            
+            <h3 className="text-2xl font-bold text-gray-800 mb-2">กรอกรหัส OTP</h3>
+            <p className="text-gray-500 text-sm mb-6">
+              ส่งข้อความ SMS ไปยังเบอร์<br/>
+              <span className="font-bold text-[#f26522]">{phoneNumber}</span> เรียบร้อยแล้ว
+            </p>
+
+            <form onSubmit={handleVerifyOTP} className="flex flex-col gap-4">
+              <input
+                type="text"
+                maxLength={6}
+                autoComplete="off"
+                placeholder="• • • • • •"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                className="w-full bg-gray-50 border border-gray-200 text-center text-2xl tracking-[0.5em] text-gray-800 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#f26522]"
+                required
+                autoFocus
+              />
+
+              {otpError && <p className="text-red-500 text-xs font-bold">{otpError}</p>}
+
+              <button
+                type="submit"
+                disabled={isVerifying || otp.length < 6}
+                className={`w-full text-white text-lg font-bold rounded-xl py-3 transition-all ${isVerifying || otp.length < 6 ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#f26522] hover:bg-orange-600 shadow-md hover:shadow-lg'}`}
+              >
+                {isVerifying ? "กำลังตรวจสอบ..." : "ยืนยัน OTP"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOTPModal(false);
+                  setOtp("");
+                  setOtpError("");
+                }}
+                className="mt-2 text-gray-500 font-bold text-sm hover:text-gray-800 transition-colors"
+              >
+                ยกเลิก / แก้ไขเบอร์โทร
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
