@@ -56,17 +56,12 @@ const initialCategories = [
   }
 ];
 
-// เครื่องปรุงและผักเคียงประจำครัว (ไม่นำมาตัดสิทธิ์ในหมวดทำได้เลย)
+// เครื่องปรุงรสพื้นฐานติดครัวจริงๆ (ตัดผัก สมุนไพร พริก หอมแดง ออก เพื่อไม่ให้กระทบเมนูน้ำพริก/ยำ)
 const OPTIONAL_PANTRY = [
-  // เครื่องปรุง & ซอส
   "น้ำปลา", "ซีอิ๊วขาว", "ซอสปรุงรส", "ซอสหอยนางรม", "น้ำมันหอย",
   "น้ำตาล", "น้ำตาลทราย", "น้ำตาลปี๊บ", "เกลือ", "ผงปรุงรส", "ผงชูรส", "รสดี",
   "น้ำมัน", "น้ำมันพืช", "พริกไทย", "พริกไทยป่น", "ซอสมะเขือเทศ", "ซอสพริก",
-  "ซีอิ๊วดำ", "น้ำส้มสายชู", "น้ำเปล่า", "น้ำซุป",
-  
-  // ผักเคียง สมุนไพร และของแต่งกลิ่นรสพื้นฐาน
-  "ต้นหอม", "ผักชี", "กระเทียม", "พริก", "พริกขี้หนู", "มะนาว", "แตงกวา", 
-  "หอมใหญ่", "หอมแดง", "มะเขือเทศ", "ใบมะกรูด", "ตะไคร้"
+  "ซีอิ๊วดำ", "น้ำส้มสายชู", "น้ำเปล่า", "น้ำซุป"
 ];
 
 // 📚 พจนานุกรมของทดแทน
@@ -105,21 +100,36 @@ const healthRules: Record<string, string[]> = {
   "โรคไขมันในเลือดสูง": ["กะทิ", "หมูสามชั้น", "เนย", "น้ำมันพืช", "ของทอด", "น้ำมัน"]
 };
 
-// ฟังก์ชันจับคู่วัตถุดิบแบบยืดหยุ่น (แก้คำไม่ตรงกันระหว่าง DB กับหน้า UI)
+// ฟังก์ชันจับคู่วัตถุดิบแบบแม่นยำ ป้องกันคำสับสน
 const isIngredientMatch = (recipeIng: string, selectedIng: string) => {
   const r = recipeIng.trim().toLowerCase();
   const s = selectedIng.trim().toLowerCase();
 
-  if (r === s || r.includes(s) || s.includes(r)) return true;
+  // 1. ตรงกันแบบสมบูรณ์
+  if (r === s) return true;
 
-  // หมวดจับคู่คำพ้อง
+  // 2. ป้องกันคำสับสนระหว่าง กะหล่ำปลี กับ กะหล่ำดอก
+  if ((r.includes("กะหล่ำปลี") && s.includes("กะหล่ำดอก")) || 
+      (r.includes("กะหล่ำดอก") && s.includes("กะหล่ำปลี"))) {
+    return false;
+  }
+
+  // 3. ป้องกันคำสับสนระหว่าง หอมแดง กับ หอมใหญ่
+  if ((r.includes("หอมแดง") && s.includes("หอมใหญ่")) || 
+      (r.includes("หอมใหญ่") && s.includes("หอมแดง"))) {
+    return false;
+  }
+
+  // 4. หมวดคำพ้องเฉพาะกลุ่มโปรตีนและแป้งหลัก
   if (r.includes("ไก่") && s.includes("ไก่")) return true;
   if (r.includes("หมู") && s.includes("หมู")) return true;
   if (r.includes("ข้าว") && s.includes("ข้าว")) return true;
   if (r.includes("ไข่") && s.includes("ไข่")) return true;
   if (r.includes("มักกะโรนี") && s.includes("มักกะโรนี")) return true;
-  if (r.includes("น้ำมัน") && s.includes("น้ำมัน")) return true;
-  if (r.includes("พริก") && s.includes("พริก")) return true;
+
+  // 5. จับคู่คำบางส่วนเฉพาะคำที่มีความยาว 4 ตัวอักษรขึ้นไป
+  if (s.length >= 4 && r.includes(s)) return true;
+  if (r.length >= 4 && s.includes(r)) return true;
 
   return false;
 };
@@ -282,7 +292,7 @@ export default function SearchIngredientsPage() {
     });
   }
 
-  // --- Logic การจับคู่สูตรอาหาร ---
+  // --- Logic การจับคู่สูตรอาหารฉบับแก้ไขสมบูรณ์ ---
   const analyzeRecipes = () => {
     if (selectedIngredients.length === 0) return { exactMatch: [], partialMatch: [] };
 
@@ -293,20 +303,21 @@ export default function SearchIngredientsPage() {
       const recipeIngs = recipe.ingredients || [];
       if (recipeIngs.length === 0) return;
 
-      // รายการวัตถุดิบทั้งหมดที่ยังไม่ได้เลือก
+      // ค้นหาวัตถุดิบทั้งหมดที่ผู้ใช้ยังไม่มี
       const missingIngredients = recipeIngs.filter(
         ing => !selectedIngredients.some(sel => isIngredientMatch(ing, sel))
       );
 
-      // วัตถุดิบหลักที่ขาด (ตัดเครื่องปรุงและผักแต่งกลิ่นออก)
+      // วัตถุดิบหลักที่ขาด (ตัดเครื่องปรุงพื้นฐานในครัวออก)
       const missingCoreIngredients = missingIngredients.filter(
         ing => !OPTIONAL_PANTRY.some(p => ing.includes(p))
       );
 
-      const matchedCount = recipeIngs.length - missingIngredients.length;
-      const matchPercentage = Math.round((matchedCount / recipeIngs.length) * 100);
+      const totalIngs = recipeIngs.length;
+      const matchedCount = totalIngs - missingIngredients.length;
+      const matchPercentage = Math.round((matchedCount / totalIngs) * 100);
 
-      // คำแนะนำการแทนที่วัตถุดิบ
+      // คำแนะนำการทดแทนวัตถุดิบ
       const missingSuggestions = missingIngredients.map(missing => {
         const foundKey = Object.keys(substitutionDictionary).find(key => missing.includes(key));
         if (foundKey) return `ขาด ${missing} ➜ ใช้: ${substitutionDictionary[foundKey]}`;
@@ -332,27 +343,26 @@ export default function SearchIngredientsPage() {
 
       const recipeAnalysis: AnalyzedRecipe = {
         ...recipe,
-        missing: missingIngredients,
+        missing: missingIngredients, // ส่งรายการที่ขาดจริงไปแสดงผลที่การ์ดเสมอ
         missingCount: missingIngredients.length,
         matchPercentage,
         suggestions: combinedSuggestions
       };
 
-      // 1. หมวด "🎯 ทำได้เลย": วัตถุดิบหลักครบ หรือขาดของหลักไม่เกิน 1 อย่าง (เช่น มีไก่+มักกะโรนี แต่ขาดไข่)
-      if (missingCoreIngredients.length <= 1 && matchPercentage >= 40) {
+      // 1. หมวด "🎯 ทำได้เลย": วัตถุดิบหลักต้องครบ 100% (missingCoreIngredients ต้องเป็น 0)
+      if (missingCoreIngredients.length === 0 && matchedCount > 0) {
         exactMatch.push({
           ...recipeAnalysis,
-          matchPercentage: Math.max(matchPercentage, 90),
-          missing: missingCoreIngredients
+          matchPercentage: Math.max(matchPercentage, 90)
         });
       }
-      // 2. หมวด "🛒 ซื้อเพิ่ม": ขาดของหลัก 2-3 อย่าง และมีความพร้อมอย่างน้อย 30%
-      else if (missingCoreIngredients.length <= 3 && matchPercentage >= 30) {
+      // 2. หมวด "🛒 ซื้อเพิ่ม": ขาดรวมกันแค่ 1-2 อย่างเท่านั้น และต้องมีวัตถุดิบตรงกันอย่างน้อย 1 ชิ้น
+      else if (missingIngredients.length >= 1 && missingIngredients.length <= 2 && matchedCount > 0) {
         partialMatch.push(recipeAnalysis);
       }
     });
 
-    // เรียงลำดับหมวดซื้อเพิ่ม: ขาดน้อยที่สุดขึ้นก่อน
+    // เรียงลำดับหมวดซื้อเพิ่ม: ขาดน้อยสุดขึ้นก่อน
     partialMatch.sort((a, b) => a.missingCount - b.missingCount || b.matchPercentage - a.matchPercentage);
 
     return { exactMatch, partialMatch };
@@ -592,7 +602,7 @@ export default function SearchIngredientsPage() {
             {partialMatch.length > 0 && (
               <div>
                 <h2 className="text-2xl font-extrabold text-gray-800 mb-6 border-l-4 border-orange-400 pl-3 flex items-center gap-2">
-                  <span className="text-2xl">🛒</span> เมนูอื่นที่อาจทำได้ (หากซื้อวัตถุดิบเพิ่ม)
+                  <span className="text-2xl">🛒</span> เมนูอื่นที่อาจทำได้ (หากซื้อวัตถุดิบเพิ่ม 1-2 อย่าง)
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {partialMatch.map(recipe => renderRecipeCard(recipe, true))}
