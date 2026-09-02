@@ -4,7 +4,11 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 // --- Types ---
 interface Recipe {
@@ -16,7 +20,7 @@ interface Recipe {
   ingredients: string[];
 }
 
-// 🌟 ตัวกรองระดับ Health Tech
+// 🌟 รายการเป้าหมายโภชนาการ
 const healthGoals = [
   { id: "all", label: "✨ แนะนำสำหรับคุณ", icon: "🎯" },
   { id: "muscle", label: "สร้างกล้ามเนื้อ (High Protein)", icon: "💪" },
@@ -25,66 +29,104 @@ const healthGoals = [
   { id: "plant", label: "แพลนท์เบส (Plant-Based)", icon: "🌱" },
 ];
 
+// =========================================================================
+// 📚 DICTIONARIES สำหรับระบบ STRICT FILTERING (ห้ามแก้ไขคำให้หย่อนยาน)
+// =========================================================================
+
+// 1. Plant-Based Blacklist: เนื้อสัตว์ ผลผลิต และเครื่องปรุงคาวจากสัตว์
+const ANIMAL_ITEMS = [
+  "หมู", "ไก่", "เนื้อ", "วัว", "เป็ด", "ปลา", "กุ้ง", "หอย", "หมึก", "ปู",
+  "ไข่", "ไส้กรอก", "ลูกชิ้น", "เบคอน", "แฮม", "กุนเชียง", "แคบหมู", "แหนม",
+  "น้ำปลา", "กะปิ", "ปลาร้า", "ซอสหอย", "น้ำมันหอย", "นม", "เนย", "ชีส", "โยเกิร์ต", 
+  "มันหมู", "น้ำมันหมู", "ผงปรุงรสหมู", "ผงปรุงรสไก่", "รสดี", "คนอร์"
+];
+
+// 2. Keto Blacklist: แป้ง คาร์บ และน้ำตาลทุกชนิด
+const KETO_CARBS_SUGARS = [
+  "ข้าว", "ข้าวสวย", "ข้าวเหนียว", "เส้น", "บะหมี่", "ก๋วยเตี๋ยว", "วุ้นเส้น", "ขนมจีน",
+  "มักกะโรนี", "สปาเก็ตตี้", "พาสต้า", "มาม่า", "ราเมง", "แป้ง", "แป้งทอดกรอบ", "แป้งมัน",
+  "น้ำตาล", "น้ำตาลทราย", "น้ำตาลปี๊บ", "น้ำเชื่อม", "น้ำผึ้ง", "นมข้น", "คาราเมล",
+  "มันฝรั่ง", "เผือก", "มันเทศ", "ข้าวโพด", "ฟักทอง", "ซอสมะเขือเทศ", "ซอสพริก", "ซีอิ๊วดำหวาน"
+];
+
+// 3. Fat-Loss Blacklist: ไขมันสูง ของทอด และคาร์บหนัก
+const FAT_LOSS_BAD_ITEMS = [
+  "ทอด", "ทอดกรอบ", "ชุบแป้งทอด", "แคบหมู", "หมูกรอบ", "เบคอน", "กะทิ", "หมูสามชั้น", 
+  "คอหมู", "หนังไก่", "ขาหมู", "เนย", "มายองเนส", "ข้าวเหนียว", "บะหมี่กึ่งสำเร็จรูป"
+];
+
+// 4. High Protein Whitelist: แหล่งโปรตีนคุณภาพสูง
+const CLEAN_PROTEIN_SOURCES = [
+  "อกไก่", "สันในไก่", "ไก่", "เนื้อวัว", "เนื้อสันใน", "ปลา", "แซลมอน", "ทูน่า",
+  "ปลากะพง", "ไข่ไก่", "ไข่ขาว", "ไข่", "กุ้ง", "เต้าหู้", "สันในหมู", "หมูเนื้อแดง"
+];
+
+// 5. Clinical Rules สำหรับโรคประจำตัว
+const DISEASE_RULES: Record<string, string[]> = {
+  "เบาหวาน": ["น้ำตาล", "น้ำเชื่อม", "นมข้น", "หวาน", "น้ำตาลปี๊บ", "น้ำผึ้ง"],
+  "ความดันโลหิตสูง": ["น้ำปลา", "เกลือ", "ซีอิ๊ว", "ซอสปรุงรส", "กะปิ", "ปลาร้า", "ผงชูรส"],
+  "ไตเรื้อรัง": ["น้ำปลา", "เกลือ", "ผงชูรส", "กะปิ", "ซีอิ๊ว", "ปลาร้า"],
+  "ไขมันในเลือดสูง": ["กะทิ", "หมูสามชั้น", "เนย", "น้ำมันพืช", "ของทอด", "หมูกรอบ", "แคบหมู"]
+};
+
 export default function SmartSearchPage() {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState("");
   const [activeGoal, setActiveGoal] = useState("all");
   
   const [allRecipes, setAllRecipes] = useState<Recipe[]>([]);
   const [filteredRecipes, setFilteredRecipes] = useState<Recipe[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 🌟 [เพิ่มใหม่] State สำหรับเก็บ "รูปแบบการกิน" จากหน้าโปรไฟล์
+  // ข้อมูลโปรไฟล์ผู้ใช้
   const [userDietPreference, setUserDietPreference] = useState<string>("ทั่วไป");
+  const [userAllergies, setUserAllergies] = useState<string[]>([]);
+  const [userDiseases, setUserDiseases] = useState<string[]>([]);
 
-  // =====================================================================
-  const trackUserSearch = async (searchWord: string) => {
-    if (!searchWord.trim()) return; 
-    try {
-      await supabase.from('search_logs').insert([{ keyword: searchWord.trim() }]);
-    } catch (error) {
-      console.error("Tracking Error:", error);
-    }
-  };
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchQuery.trim()) {
-        trackUserSearch(searchQuery);
-      }
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-  // =====================================================================
-
+  // คำนวณสัดส่วนสารอาหาร Macronutrients ตามหลักวิทยาศาสตร์การกีฬา/โภชนาการ
   const calculateMacros = (kcalString: string, goal: string) => {
     const kcal = parseInt(kcalString.replace(/\D/g, "")) || 350;
     let p = 0, c = 0, f = 0;
 
-    if (goal === "muscle" || kcal > 400) {
-      p = Math.floor((kcal * 0.4) / 4); 
-      c = Math.floor((kcal * 0.4) / 4);
-      f = Math.floor((kcal * 0.2) / 9);
-    } else if (goal === "keto" || userDietPreference.includes("คีโต")) { // อิงจากโปรไฟล์ด้วย
+    if (goal === "muscle") {
+      // High Protein: Protein 40%, Carb 35%, Fat 25%
+      p = Math.floor((kcal * 0.40) / 4); 
+      c = Math.floor((kcal * 0.35) / 4);
+      f = Math.floor((kcal * 0.25) / 9);
+    } else if (goal === "keto" || userDietPreference.includes("คีโต")) {
+      // Strict Keto: Fat 70%, Protein 25%, Carb 5%
       p = Math.floor((kcal * 0.25) / 4); 
       c = Math.floor((kcal * 0.05) / 4); 
-      f = Math.floor((kcal * 0.7) / 9);  
+      f = Math.floor((kcal * 0.70) / 9);  
+    } else if (goal === "fat-loss") {
+      // Fat Loss: Protein 40%, Carb 30%, Fat 30%
+      p = Math.floor((kcal * 0.40) / 4);
+      c = Math.floor((kcal * 0.30) / 4);
+      f = Math.floor((kcal * 0.30) / 9);
     } else {
-      p = Math.floor((kcal * 0.3) / 4);
-      c = Math.floor((kcal * 0.5) / 4);
-      f = Math.floor((kcal * 0.2) / 9);
+      // Balanced Nutrition
+      p = Math.floor((kcal * 0.30) / 4);
+      c = Math.floor((kcal * 0.50) / 4);
+      f = Math.floor((kcal * 0.20) / 9);
     }
     return { p, c, f };
   };
 
   useEffect(() => {
-    const fetchInitialData = async () => {
+    const loadInitialData = async () => {
       setIsLoading(true);
 
-      // 🌟 แอบไปดึง "รูปแบบการทานอาหาร" จากเครื่องมาเตรียมไว้
+      // โหลดข้อมูลสุขภาพของผู้ใช้จาก LocalStorage
       const savedDiet = localStorage.getItem("dietaryPreference");
-      if (savedDiet) {
-        setUserDietPreference(savedDiet);
+      if (savedDiet) setUserDietPreference(savedDiet);
+
+      const savedAllergies = localStorage.getItem("allergies");
+      if (savedAllergies) {
+        setUserAllergies(savedAllergies.split(",").map(a => a.trim().toLowerCase()).filter(Boolean));
+      }
+
+      const savedDiseases = localStorage.getItem("diseases");
+      if (savedDiseases) {
+        setUserDiseases(savedDiseases.split(",").map(d => d.trim()).filter(Boolean));
       }
 
       try {
@@ -100,110 +142,122 @@ export default function SmartSearchPage() {
         setIsLoading(false);
       }
     };
-    fetchInitialData();
+    loadInitialData();
   }, []);
 
-  // 🧠 อัลกอริทึมค้นหาแบบอิง "โภชนาการ + โปรไฟล์" แบบขั้นเทพ
+  // 🧠 อัลกอริทึมคัดกรอง STRICT FILTERING ครบทั้ง 5 หมวดหมู่
   useEffect(() => {
-    let result = allRecipes;
+    let result = [...allRecipes];
 
-    // 1. กรองด้วยคำค้นหา (Search Query)
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(recipe => 
-        recipe.name.toLowerCase().includes(query) || 
-        recipe.ingredients.some(ing => ing.toLowerCase().includes(query))
-      );
+    // --- ด่านที่ 1: ตรวจสอบความเข้ากันได้กับโปรไฟล์ส่วนตัว (Profile Dietary & Allergies) ---
+    if (userAllergies.length > 0) {
+      result = result.filter(recipe => {
+        const text = (recipe.name + " " + (recipe.ingredients || []).join(" ")).toLowerCase();
+        return !userAllergies.some(allergy => text.includes(allergy));
+      });
     }
 
-    // 🌟 2. ด่านตรวจคนเข้าเมือง: กรองด้วย "รูปแบบการทานอาหาร" จากโปรไฟล์
     if (userDietPreference && userDietPreference !== "ทั่วไป") {
       result = result.filter(recipe => {
-        const textToCheck = (recipe.name + " " + recipe.ingredients.join(" ")).toLowerCase();
-
-        if (userDietPreference.includes("มังสวิรัติ")) {
-          return !["หมู", "ไก่", "เนื้อ", "ปลา", "กุ้ง", "หอย", "หมึก", "น้ำปลา", "กะปิ", "กุนเชียง", "เบคอน"].some(meat => textToCheck.includes(meat));
+        const text = (recipe.name + " " + (recipe.ingredients || []).join(" ")).toLowerCase();
+        if (userDietPreference.includes("มังสวิรัติ") || userDietPreference.includes("แพลนท์เบส")) {
+          return !ANIMAL_ITEMS.some(item => text.includes(item));
         }
         if (userDietPreference === "เจ") {
-          return !["หมู", "ไก่", "เนื้อ", "ปลา", "กุ้ง", "หอย", "หมึก", "น้ำปลา", "กะปิ", "ไข่", "กระเทียม", "หอม", "ผักชี", "กุยช่าย"].some(item => textToCheck.includes(item));
+          const J_FORBIDDEN = [...ANIMAL_ITEMS, "กระเทียม", "หัวหอม", "หอมแดง", "ต้นหอม", "กุยช่าย", "ใบยาสูบ"];
+          return !J_FORBIDDEN.some(item => text.includes(item));
         }
         if (userDietPreference.includes("คีโต")) {
-          return !["ข้าว", "เส้น", "น้ำตาล", "แป้ง", "น้ำผึ้ง", "น้ำเชื่อม"].some(carb => textToCheck.includes(carb));
+          return !KETO_CARBS_SUGARS.some(carb => text.includes(carb));
         }
         if (userDietPreference.includes("ฮาลาล")) {
-          return !["หมู", "เลือด", "เหล้า", "ไวน์", "เบียร์", "มิริน", "กุนเชียง", "เบคอน", "สามชั้น"].some(haram => textToCheck.includes(haram));
+          const HARAM_ITEMS = ["หมู", "เลือด", "เหล้า", "ไวน์", "เบียร์", "มิริน", "กุนเชียง", "เบคอน", "สามชั้น"];
+          return !HARAM_ITEMS.some(haram => text.includes(haram));
         }
         return true;
       });
     }
 
-    // 3. กรองด้วยเป้าหมายสุขภาพหน้าเว็บ (Active Goal)
-    if (activeGoal !== "all") {
-      result = result.filter(recipe => {
-        const kcal = parseInt(recipe.kcal.replace(/\D/g, "")) || 0;
-        const ings = recipe.ingredients.join(" ").toLowerCase();
+    // --- ด่านที่ 2: ระบบ STRICT FILTERING ตาม 5 หมวดเป้าหมาย ---
+    result = result.filter(recipe => {
+      const kcal = parseInt(recipe.kcal.replace(/\D/g, "")) || 0;
+      const text = (recipe.name + " " + (recipe.ingredients || []).join(" ")).toLowerCase();
 
-        switch (activeGoal) {
-          case "muscle":
-            return ["ไก่", "เนื้อ", "ปลา", "ไข่"].some(meat => ings.includes(meat)) && kcal > 250;
-          case "fat-loss":
-            return kcal <= 350 && !ings.includes("ทอด") && !ings.includes("กะทิ") && !ings.includes("สามชั้น");
-          case "keto":
-            return !ings.includes("ข้าว") && !ings.includes("เส้น") && !ings.includes("น้ำตาล");
-          case "plant":
-            return !["หมู", "ไก่", "เนื้อ", "ปลา", "กุ้ง", "หอย", "หมึก", "ไข่", "น้ำปลา"].some(meat => ings.includes(meat));
-          default:
-            return true;
+      switch (activeGoal) {
+        // 1. 🌱 แพลนท์เบส: อาหารจากพืช 100% ห้ามมีสัตว์หรือผลผลิตสัตว์แม้แต่น้อย
+        case "plant":
+          return !ANIMAL_ITEMS.some(animal => text.includes(animal));
+
+        // 2. 🥑 คีโตเจนิค: ตัดคาร์โบไฮเดรต แป้ง ข้าว เส้น และน้ำตาลทุกชนิดเด็ดขาด
+        case "keto":
+          return !KETO_CARBS_SUGARS.some(carb => text.includes(carb));
+
+        // 3. 🔥 เน้นเบิร์นไขมัน: แคลอรีต่ำ (ไม่เกิน 350 kcal) + ตัดของทอดและไขมันเลว
+        case "fat-loss": {
+          const isLowCal = kcal > 0 && kcal <= 350;
+          const hasNoBadFat = !FAT_LOSS_BAD_ITEMS.some(badItem => text.includes(badItem));
+          return isLowCal && hasNoBadFat;
         }
-      });
-    }
 
-    setTimeout(() => {
-      setFilteredRecipes(result);
-    }, 0);
-  }, [searchQuery, activeGoal, allRecipes, userDietPreference]);
+        // 4. 💪 สร้างกล้ามเนื้อ: ต้องมีโปรตีนหลักชั้นดี + พลังงานเพียงพอ + ปราศจากของแปรรูปไร้ประโยชน์
+        case "muscle": {
+          const hasCleanProtein = CLEAN_PROTEIN_SOURCES.some(p => text.includes(p));
+          const hasSufficientKcal = kcal >= 280;
+          const notJustJunk = !["แคบหมู", "แหนม", "หมูกรอบ"].some(j => text.includes(j) && !text.includes("อกไก่"));
+          return hasCleanProtein && hasSufficientKcal && notJustJunk;
+        }
+
+        // 5. 🎯 ✨ แนะนำสำหรับคุณ: กรองโรคประจำตัวเข้มงวด + พลังงานอยู่ในเกณฑ์สมดุล (250 - 550 kcal)
+        case "all":
+        default: {
+          // ตรวจสอบโรคประจำตัว
+          for (const disease of userDiseases) {
+            const forbidden = DISEASE_RULES[disease] || [];
+            if (forbidden.some(risk => text.includes(risk))) {
+              return false; // ตัดทิ้งทันทีถ้าผิดหลักโรคประจำตัว
+            }
+          }
+          // คุมแคลอรีสมดุล
+          if (kcal > 0 && (kcal < 200 || kcal > 550)) return false;
+          return true;
+        }
+      }
+    });
+
+    setFilteredRecipes(result);
+  }, [activeGoal, allRecipes, userDietPreference, userAllergies, userDiseases]);
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] font-sans pb-24">
       
-      {/* 🌟 Header: AI Prompt Style */}
-      <div className="bg-white border-b border-gray-100 pt-16 pb-10 px-4 shadow-[0_10px_30px_rgb(0,0,0,0.02)] relative overflow-hidden">
+      {/* 🌟 ส่วน Header โภชนาการ */}
+      <div className="bg-white border-b border-gray-100 pt-16 pb-12 px-4 shadow-[0_10px_30px_rgb(0,0,0,0.02)] relative overflow-hidden">
         <div className="max-w-3xl mx-auto text-center relative z-10">
           
           <div className="inline-flex items-center gap-2 bg-orange-50 text-orange-600 px-4 py-1.5 rounded-full font-bold text-sm mb-6 border border-orange-100">
             <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
-            Smart Nutrition AI 
-            {userDietPreference !== "ทั่วไป" && <span className="ml-1 px-2 py-0.5 bg-orange-200 text-orange-800 rounded-md text-[10px] uppercase">โหมด: {userDietPreference}</span>}
+            Smart Nutrition AI (Strict Mode 🔒)
+            {userDietPreference !== "ทั่วไป" && (
+              <span className="ml-1 px-2 py-0.5 bg-orange-200 text-orange-800 rounded-md text-[10px] uppercase">
+                {userDietPreference}
+              </span>
+            )}
           </div>
 
-          <h1 className="text-3xl md:text-5xl font-extrabold text-gray-900 mb-6 tracking-tight leading-tight">
+          <h1 className="text-3xl md:text-5xl font-extrabold text-gray-900 mb-8 tracking-tight leading-tight">
             บอกเป้าหมายของคุณมาสิ <br/>
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#f26522] to-[#ff4757]">
               เดี๋ยวเราจัดเมนูให้เอง
             </span>
           </h1>
 
-          {/* AI Prompt Input */}
-          <div className="relative max-w-2xl mx-auto group mb-8">
-            <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
-              <span className="text-2xl opacity-50 group-focus-within:opacity-100 transition-opacity">✨</span>
-            </div>
-            <input
-              type="text"
-              className="w-full bg-gray-50/50 border-2 border-gray-200 pl-14 pr-4 py-5 rounded-[2rem] text-gray-800 font-bold text-lg focus:outline-none focus:border-[#f26522] focus:bg-white focus:ring-4 focus:ring-orange-500/10 transition-all shadow-sm placeholder:text-gray-400 placeholder:font-medium"
-              placeholder="เช่น อยากกินของแซ่บๆ แต่แคลไม่เกิน 300..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-
-          {/* Smart Goals */}
+          {/* 🌟 แถบเลือก 5 เป้าหมายโภชนาการ */}
           <div className="flex flex-wrap justify-center gap-3">
             {healthGoals.map((goal) => (
               <button
                 key={goal.id}
                 onClick={() => setActiveGoal(goal.id)}
-                className={`px-5 py-2.5 rounded-2xl font-bold text-sm transition-all duration-300 flex items-center gap-2 ${
+                className={`px-5 py-3 rounded-2xl font-bold text-sm transition-all duration-200 flex items-center gap-2 ${
                   activeGoal === goal.id 
                     ? "bg-gray-900 text-white shadow-lg shadow-gray-900/20 scale-105" 
                     : "bg-white text-gray-600 border border-gray-200 hover:border-gray-300 hover:bg-gray-50"
@@ -217,20 +271,22 @@ export default function SmartSearchPage() {
         </div>
       </div>
 
-      {/* 🌟 Results: Macro-focused Cards */}
+      {/* 🌟 ผลลัพธ์เมนูอาหาร */}
       <main className="max-w-6xl mx-auto px-4 pt-12">
         
         <div className="flex justify-between items-center mb-8">
           <h2 className="text-2xl font-extrabold text-gray-800 flex items-center gap-2">
-            เมนูที่ตรงกับคุณ 
-            <span className="bg-gray-900 text-white text-sm px-3 py-0.5 rounded-lg">{filteredRecipes.length}</span>
+            เมนูที่ตรงตามเกณฑ์ 
+            <span className="bg-gray-900 text-white text-sm px-3 py-0.5 rounded-lg font-mono">
+              {filteredRecipes.length}
+            </span>
           </h2>
         </div>
 
         {isLoading ? (
           <div className="py-20 flex flex-col items-center justify-center">
             <div className="w-12 h-12 border-4 border-gray-200 border-t-[#f26522] rounded-full animate-spin mb-4"></div>
-            <p className="text-gray-500 font-bold">กำลังวิเคราะห์โภชนาการ...</p>
+            <p className="text-gray-500 font-bold">กำลังตรวจสอบความถูกต้องทางโภชนาการ...</p>
           </div>
         ) : filteredRecipes.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -240,7 +296,7 @@ export default function SmartSearchPage() {
               return (
                 <div 
                   key={recipe.id}
-                  onClick={() => router.push(`/search/${encodeURIComponent(recipe.name)}`)}
+                  onClick={() => router.push(`/recipe/${encodeURIComponent(recipe.name)}`)}
                   className="bg-white rounded-[2rem] p-5 shadow-sm border border-gray-100 cursor-pointer hover:-translate-y-2 hover:shadow-2xl hover:shadow-orange-500/10 transition-all duration-300 group flex flex-col h-full"
                 >
                   <div className="flex justify-between items-start mb-4">
@@ -252,7 +308,7 @@ export default function SmartSearchPage() {
                     </div>
                   </div>
                   
-                  {/* Macros Display */}
+                  {/* แสดงค่า Macros ที่คำนวณตามหลักสูตรโภชนาการ */}
                   <div className="flex gap-2 mb-6">
                     <div className="bg-blue-50/50 border border-blue-100 px-3 py-2 rounded-xl flex-1 text-center">
                       <div className="text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-0.5">Protein</div>
@@ -282,16 +338,16 @@ export default function SmartSearchPage() {
           </div>
         ) : (
           <div className="bg-white rounded-[2.5rem] p-12 text-center shadow-sm border border-dashed border-gray-200 max-w-2xl mx-auto mt-10">
-            <span className="text-6xl block mb-6">🥗</span>
-            <h3 className="text-2xl font-extrabold text-gray-800 mb-3">ไม่พบเมนูที่ตรงกับเป้าหมาย</h3>
+            <span className="text-6xl block mb-6">🔒</span>
+            <h3 className="text-2xl font-extrabold text-gray-800 mb-3">ไม่พบเมนูที่ผ่านเกณฑ์ความปลอดภัย</h3>
             <p className="text-gray-500 font-medium max-w-md mx-auto mb-8">
-              ดูเหมือนว่าวัตถุดิบหรือเป้าหมายโภชนาการที่คุณเลือกจะเฉพาะเจาะจงเกินไป ลองปรับให้กว้างขึ้นอีกนิดนะครับ
+              ระบบตรวจสอบพบว่าเมนูอาหารในฐานข้อมูลมีวัตถุดิบที่ไม่ผ่านเกณฑ์ความเข้มงวดของหมวดหมู่นี้ หรือขัดกับประวัติโรคประจำตัวของคุณ
             </p>
             <button 
-              onClick={() => { setSearchQuery(""); setActiveGoal("all"); }}
+              onClick={() => setActiveGoal("all")}
               className="bg-gray-900 hover:bg-gray-800 text-white font-bold px-8 py-3.5 rounded-full transition-transform active:scale-95 shadow-md"
             >
-              ดูเมนูแนะนำทั้งหมด
+              รีเซ็ตกลับเป็นเมนูแนะนำทั่วไป
             </button>
           </div>
         )}
