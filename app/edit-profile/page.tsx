@@ -3,6 +3,13 @@
 
 import { useState, useRef, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
+
+// 🌟 เชื่อมต่อฐานข้อมูล Supabase
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export default function EditProfilePage() {
   const router = useRouter();
@@ -10,84 +17,97 @@ export default function EditProfilePage() {
   // ==========================================
   // 🌟 STATE จัดการข้อมูลในฟอร์ม
   // ==========================================
+  const [userId, setUserId] = useState<string | null>(null);
+  const [currentUsername, setCurrentUsername] = useState<string>("");
   const [name, setName] = useState("คุณผู้ใช้ ใจดี");
   const [profileImage, setProfileImage] = useState("https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=facearea&facepad=2&w=256&h=256&q=80");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // 🌟 ข้อมูลร่างกาย
+  // ข้อมูลร่างกาย
   const [age, setAge] = useState<string>("");
   const [weight, setWeight] = useState<string>("");
   const [height, setHeight] = useState<string>("");
   const [gender, setGender] = useState<string>("male"); 
 
-  // 🌟 ข้อมูลการทานอาหาร
+  // ข้อมูลการทานอาหาร
   const [diet, setDiet] = useState<string>("ทั่วไป");
   const dietOptions = ["ทั่วไป", "มังสวิรัติ", "เจ", "คีโต (Keto)", "ฮาลาล (Halal)"];
 
-  // ข้อมูลสุขภาพ (อาการแพ้)
+  // ข้อมูลสุขภาพ (อาการแพ้ & โรคประจำตัว)
   const [allergies, setAllergies] = useState<string[]>([]);
   const [newAllergy, setNewAllergy] = useState("");
 
-  // ข้อมูลสุขภาพ (โรคประจำตัว)
   const [diseases, setDiseases] = useState<string[]>([]);
   const [newDisease, setNewDisease] = useState("");
 
-  // 🌟 รายชื่อแนะนำสำหรับ Dropdown
   const diseaseOptions = ["เบาหวาน", "ความดันโลหิตสูง", "โรคหัวใจ", "โรคไต", "โรคเกาต์", "ไขมันในเลือดสูง"];
   const allergyOptions = ["กุ้ง", "ปลาหมึก", "ปู", "หอย", "ปลา", "ถั่วลิสง", "นมวัว", "แป้งสาลี", "ไข่", "ถั่วเหลือง"];
 
   // ==========================================
-  // 🌟 ดึงข้อมูลเดิมมาโชว์ตอนโหลดหน้าแรก
+  // 🌟 โหลดข้อมูลจาก Supabase และ Storage
   // ==========================================
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const loadUserData = async () => {
+      let userNameFromSession = "";
+
+      // 1. อ่านข้อมูลผู้ใช้จาก Session
       const savedUserStr = sessionStorage.getItem("mockUser");
       if (savedUserStr) {
         const savedUser = JSON.parse(savedUserStr);
-        if (savedUser.name) setName(savedUser.name);
+        if (savedUser.name) {
+          setName(savedUser.name);
+          setCurrentUsername(savedUser.name);
+          userNameFromSession = savedUser.name;
+        }
+        if (savedUser.id) setUserId(savedUser.id);
       }
-      
-      const savedImg = localStorage.getItem("profileImage");
-      if (savedImg) setProfileImage(savedImg);
 
-      const savedDiet = localStorage.getItem("dietaryPreference");
-      if (savedDiet) setDiet(savedDiet);
+      // 2. ดึงข้อมูลล่าสุดจาก Supabase เพื่อนำมาแสดงบนฟอร์ม
+      if (userNameFromSession) {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("full_name", userNameFromSession)
+          .maybeSingle();
 
-      const savedAllergies = localStorage.getItem("allergies");
-      if (savedAllergies) setAllergies(savedAllergies.split(",").filter(Boolean));
+        if (data && !error) {
+          if (data.id) setUserId(data.id);
+          if (data.age) setAge(data.age.toString());
+          if (data.health_issues) {
+            const rawIssues = data.health_issues.split(",").map((s: string) => s.trim()).filter(Boolean);
+            setDiseases(rawIssues.filter((i: string) => diseaseOptions.includes(i)));
+            setAllergies(rawIssues.filter((i: string) => !diseaseOptions.includes(i)));
+          }
+        }
+      }
 
-      const savedDiseases = localStorage.getItem("diseases");
-      if (savedDiseases) setDiseases(savedDiseases.split(",").filter(Boolean));
+     const savedAge = localStorage.getItem("userAge");
+    if (savedAge) setAge(savedAge); // ✅ แก้จุดที่ 1
 
-      const savedAge = localStorage.getItem("userAge");
-      if (savedAge) setAge(savedAge);
-      
-      const savedWeight = localStorage.getItem("userWeight");
-      if (savedWeight) setWeight(savedWeight);
-      
-      const savedHeight = localStorage.getItem("userHeight");
-      if (savedHeight) setHeight(savedHeight);
-    }, 0);
+    const savedWeight = localStorage.getItem("userWeight");
+    if (savedWeight) setWeight(savedWeight);
 
-    return () => clearTimeout(timer);
-  }, []);
+    const savedHeight = localStorage.getItem("userHeight");
+    if (savedHeight) setHeight(savedHeight);
+  };
+
+  loadUserData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []); // ✅ ใส่คอมเมนต์ปิด warning ก่อนปิดวงเล็บ
 
   // ==========================================
   // 🌟 ฟังก์ชันคำนวณ BMI และ แคลอรี่ (Real-time)
   // ==========================================
-  
-  // 1. คำนวณ BMI
   const bmi = useMemo(() => {
     const w = parseFloat(weight);
     const h = parseFloat(height) / 100;
     if (w > 0 && h > 0) {
-      const result = (w / (h * h)).toFixed(1);
-      return parseFloat(result);
+      return parseFloat((w / (h * h)).toFixed(1));
     }
     return 0;
   }, [weight, height]);
 
-  // ประเมินเกณฑ์ BMI
   const getBmiStatus = (bmiValue: number) => {
     if (bmiValue === 0) return { text: "-", color: "text-gray-400", bg: "bg-gray-100" };
     if (bmiValue < 18.5) return { text: "น้ำหนักน้อย / ผอม", color: "text-blue-600", bg: "bg-blue-50 border-blue-200" };
@@ -98,34 +118,23 @@ export default function EditProfilePage() {
   };
   const bmiStatus = getBmiStatus(bmi);
 
-  // 2. คำนวณ TDEE และ แคลอรี่ต่อมื้อ (ถ้ากรอกครบ 3 ช่อง)
   const metabolicData = useMemo(() => {
     const w = parseFloat(weight);
     const h = parseFloat(height);
     const a = parseInt(age);
 
     if (w > 0 && h > 0 && a > 0) {
-      let bmr = 0;
-      // สูตร Mifflin-St Jeor (แม่นยำที่สุด)
-      if (gender === "male") {
-        bmr = (10 * w) + (6.25 * h) - (5 * a) + 5;
-      } else {
-        bmr = (10 * w) + (6.25 * h) - (5 * a) - 161;
-      }
+ const bmr = (gender === "male")
+  ? (10 * w) + (6.25 * h) - (5 * a) + 5
+  : (10 * w) + (6.25 * h) - (5 * a) - 161;
 
-      // TDEE = BMR * 1.55 (ระดับกิจกรรมปานกลาง)
       const tdee = Math.round(bmr * 1.55);
-      const perMeal = Math.round(tdee / 3);
-      
-      return { bmr: Math.round(bmr), tdee, perMeal };
+      return { bmr: Math.round(bmr), tdee, perMeal: Math.round(tdee / 3) };
     }
     return null;
   }, [weight, height, age, gender]);
 
-
-  // ==========================================
-  // 🌟 ฟังก์ชันจัดการปุ่มและรูปภาพ
-  // ==========================================
+  // จัดการรูปภาพและ Tag สุขภาพ
   const handleImageClick = () => { fileInputRef.current?.click(); };
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -151,43 +160,85 @@ export default function EditProfilePage() {
   const removeDisease = (target: string) => { setDiseases(diseases.filter(d => d !== target)); };
 
   // ==========================================
-  // 🌟 ฟังก์ชัน SAVE
+  // 🌟 ฟังก์ชัน SAVE (บันทึกลง Supabase จริง + LocalStorage)
   // ==========================================
   const handleSave = async () => {
-    const savedUserStr = sessionStorage.getItem("mockUser");
-    if (savedUserStr) {
-      const savedUser = JSON.parse(savedUserStr);
-      savedUser.name = name;
-      sessionStorage.setItem("mockUser", JSON.stringify(savedUser));
+    setIsSaving(true);
+    try {
+      const trimmedName = name.trim() || "ผู้ใช้งาน";
+      const combinedIssues = [...diseases, ...allergies].filter(Boolean);
+      const healthIssuesPayload = combinedIssues.length > 0 ? combinedIssues.join(", ") : null;
+
+      // 1. ส่งข้อมูลอัปเดตไปยัง Supabase profiles (ถ้าเว้นว่างจะส่ง null เพื่อล้างค่าใน DB)
+      const updateData = {
+        full_name: trimmedName,
+        age: age && parseInt(age) > 0 ? parseInt(age) : null,
+        bmi: bmi > 0 ? bmi : null,
+        health_issues: healthIssuesPayload,
+      };
+
+      if (userId) {
+        await supabase.from("profiles").update(updateData).eq("id", userId);
+      } else {
+        const queryName = currentUsername || trimmedName;
+        await supabase.from("profiles").update(updateData).eq("full_name", queryName);
+      }
+
+      // 2. บันทึกลง Client Cache (sessionStorage & localStorage)
+      const savedUserStr = sessionStorage.getItem("mockUser");
+      if (savedUserStr) {
+        const savedUser = JSON.parse(savedUserStr);
+        savedUser.name = trimmedName;
+        sessionStorage.setItem("mockUser", JSON.stringify(savedUser));
+      }
+
+      localStorage.setItem("profileImage", profileImage);
+      localStorage.setItem("dietaryPreference", diet);
+      
+      if (allergies.length > 0) localStorage.setItem("allergies", allergies.join(","));
+      else localStorage.removeItem("allergies");
+
+      if (diseases.length > 0) localStorage.setItem("diseases", diseases.join(","));
+      else localStorage.removeItem("diseases");
+
+      if (age && age.trim()) localStorage.setItem("userAge", age.trim());
+      else localStorage.removeItem("userAge");
+
+      if (weight && weight.trim()) localStorage.setItem("userWeight", weight.trim());
+      else localStorage.removeItem("userWeight");
+
+      if (height && height.trim()) localStorage.setItem("userHeight", height.trim());
+      else localStorage.removeItem("userHeight");
+
+      if (bmi > 0) {
+        localStorage.setItem("userBMI", bmi.toString());
+        localStorage.setItem("userBMIStatus", bmiStatus.text);
+      } else {
+        localStorage.removeItem("userBMI");
+        localStorage.removeItem("userBMIStatus");
+      }
+
+      if (metabolicData) {
+        localStorage.setItem("userBMR", metabolicData.bmr.toString());
+        localStorage.setItem("userTDEE", metabolicData.tdee.toString());
+      } else {
+        localStorage.removeItem("userBMR");
+        localStorage.removeItem("userTDEE");
+      }
+
+      window.dispatchEvent(new Event("profileUpdated"));
+      alert("บันทึกข้อมูลลงฐานข้อมูล Supabase สำเร็จแล้ว! ✨");
+      router.push("/profile");
+    } catch (error) {
+      console.error("บันทึกข้อมูลล้มเหลว:", error);
+      alert("เกิดข้อผิดพลาดในการเชื่อมต่อ Supabase");
+    } finally {
+      setIsSaving(false);
     }
-
-    localStorage.setItem("profileImage", profileImage);
-    localStorage.setItem("dietaryPreference", diet);
-    localStorage.setItem("allergies", allergies.join(","));
-    localStorage.setItem("diseases", diseases.join(","));
-    
-    if (age) localStorage.setItem("userAge", age);
-    if (weight) localStorage.setItem("userWeight", weight);
-    if (height) localStorage.setItem("userHeight", height);
-
-    if (bmi > 0) {
-      localStorage.setItem("userBMI", bmi.toString());
-      localStorage.setItem("userBMIStatus", bmiStatus.text);
-    }
-
-    if (metabolicData) {
-      localStorage.setItem("userBMR", metabolicData.bmr.toString());
-      localStorage.setItem("userTDEE", metabolicData.tdee.toString());
-    }
-
-    window.dispatchEvent(new Event("profileUpdated"));
-    alert("บันทึกข้อมูลเรียบร้อยแล้ว AI รับทราบเป้าหมายของคุณแล้วครับ! 🤖✨");
-    router.push("/profile"); 
   };
 
   return (
     <div className="min-h-screen bg-gray-50 py-10 px-4 flex justify-center items-start font-sans">
-      
       <div className="bg-white w-full max-w-2xl rounded-[2rem] shadow-xl border border-gray-100 overflow-hidden animate-fade-in">
         
         <div className="bg-white px-8 pt-8 pb-4 border-b border-gray-100 flex items-center justify-between">
@@ -195,7 +246,6 @@ export default function EditProfilePage() {
         </div>
 
         <div className="p-8">
-          
           <div className="flex flex-col items-center mb-10">
             <div onClick={handleImageClick} className="relative w-32 h-32 rounded-full shadow-md border-4 border-white cursor-pointer group overflow-hidden bg-gray-100">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -209,7 +259,6 @@ export default function EditProfilePage() {
           </div>
 
           <div className="space-y-8">
-            
             <section>
               <div className="flex items-center gap-2 mb-4">
                 <div className="w-1.5 h-6 bg-[#f26522] rounded-full"></div>
@@ -219,7 +268,7 @@ export default function EditProfilePage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">ชื่อ - นามสกุล</label>
-                  <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#f26522] focus:border-[#f26522] outline-none transition-all text-gray-700 font-medium shadow-sm" placeholder="กรอกชื่อของคุณ" />
+                  <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#f26522] outline-none text-gray-700 font-medium shadow-sm" placeholder="กรอกชื่อของคุณ" />
                 </div>
 
                 <div className="flex gap-4">
@@ -248,10 +297,8 @@ export default function EditProfilePage() {
                   </div>
                 </div>
 
-                {/* 🌟 แสดงผล Dashboard เมื่อกรอกข้อมูลครบ */}
                 {bmi > 0 && (
-                  <div className="space-y-3 animate-fade-in mt-4">
-                    {/* กล่อง BMI */}
+                  <div className="space-y-3 mt-4">
                     <div className={`p-4 rounded-xl border flex items-center justify-between ${bmiStatus.bg}`}>
                       <div>
                         <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">ค่าดัชนีมวลกาย (BMI)</p>
@@ -260,9 +307,8 @@ export default function EditProfilePage() {
                       <div className={`text-3xl font-black ${bmiStatus.color}`}>{bmi}</div>
                     </div>
 
-                    {/* กล่อง แคลอรี่ (โชว์เมื่อใส่อายุด้วย) */}
                     {metabolicData && (
-                      <div className="grid grid-cols-2 gap-3 animate-fade-in">
+                      <div className="grid grid-cols-2 gap-3">
                         <div className="bg-blue-50/50 border border-blue-100 p-4 rounded-xl text-center">
                           <p className="text-[11px] font-bold text-blue-500 uppercase tracking-wider mb-1">โควต้าแคลอรี่/วัน</p>
                           <p className="text-2xl font-black text-blue-700">
@@ -293,6 +339,7 @@ export default function EditProfilePage() {
                 {dietOptions.map((option, index) => (
                   <button 
                     key={index}
+                    type="button"
                     onClick={() => setDiet(option)}
                     className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all border ${
                       diet === option 
@@ -309,14 +356,9 @@ export default function EditProfilePage() {
             <hr className="border-gray-100" />
 
             <section>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
-                <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-6 bg-[#f26522] rounded-full"></div>
-                  <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">🏥 ข้อมูลสุขภาพ</h2>
-                </div>
-                <span className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 text-blue-600 text-[11px] px-3 py-1 rounded-full font-bold flex items-center gap-1.5 shadow-sm w-max">
-                  <span className="animate-pulse">✨</span> AI จะช่วยกรองเมนูที่ไม่เหมาะสม
-                </span>
+              <div className="flex items-center gap-2 mb-6">
+                <div className="w-1.5 h-6 bg-[#f26522] rounded-full"></div>
+                <h2 className="text-lg font-bold text-gray-800">🏥 ข้อมูลสุขภาพ</h2>
               </div>
 
               <div className="space-y-6">
@@ -325,9 +367,9 @@ export default function EditProfilePage() {
                   <div className="flex flex-wrap gap-2 mb-3">
                     {allergies.length === 0 && <p className="text-sm text-gray-400 italic">- ยังไม่มีข้อมูล -</p>}
                     {allergies.map((allergy, index) => (
-                      <span key={index} className="bg-red-50 border border-red-100 text-red-600 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm animate-fade-in">
+                      <span key={index} className="bg-red-50 border border-red-100 text-red-600 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm">
                         {allergy}
-                        <button onClick={() => removeAllergy(allergy)} className="text-red-400 hover:text-red-600 transition-colors">✕</button>
+                        <button type="button" onClick={() => removeAllergy(allergy)} className="text-red-400 hover:text-red-600 transition-colors">✕</button>
                       </span>
                     ))}
                   </div>
@@ -338,14 +380,14 @@ export default function EditProfilePage() {
                       value={newAllergy}
                       onChange={(e) => setNewAllergy(e.target.value)}
                       placeholder="คลิกเพื่อเลือกจากรายการ หรือพิมพ์สิ่งที่แพ้เอง..." 
-                      className="flex-grow p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-200 focus:border-red-400 outline-none transition-all text-sm font-medium bg-white"
+                      className="flex-grow p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-200 outline-none text-sm font-medium bg-white"
                     />
                     <datalist id="allergy-suggestions">
                       {allergyOptions.map((a, i) => (
                         <option key={i} value={a} />
                       ))}
                     </datalist>
-                    <button type="submit" disabled={!newAllergy.trim()} className="px-5 py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 hover:text-red-500 hover:border-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
+                    <button type="submit" disabled={!newAllergy.trim()} className="px-5 py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 shadow-sm">
                       เพิ่ม
                     </button>
                   </form>
@@ -356,9 +398,9 @@ export default function EditProfilePage() {
                   <div className="flex flex-wrap gap-2 mb-3">
                     {diseases.length === 0 && <p className="text-sm text-gray-400 italic">- ยังไม่มีข้อมูล -</p>}
                     {diseases.map((disease, index) => (
-                      <span key={index} className="bg-orange-50 border border-orange-100 text-[#f26522] px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm animate-fade-in">
+                      <span key={index} className="bg-orange-50 border border-orange-100 text-[#f26522] px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm">
                         {disease}
-                        <button onClick={() => removeDisease(disease)} className="text-orange-300 hover:text-orange-600 transition-colors">✕</button>
+                        <button type="button" onClick={() => removeDisease(disease)} className="text-orange-300 hover:text-orange-600 transition-colors">✕</button>
                       </span>
                     ))}
                   </div>
@@ -369,37 +411,38 @@ export default function EditProfilePage() {
                       value={newDisease}
                       onChange={(e) => setNewDisease(e.target.value)}
                       placeholder="คลิกเพื่อเลือกจากรายการ หรือพิมพ์ชื่อโรคเอง..." 
-                      className="flex-grow p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-200 focus:border-orange-400 outline-none transition-all text-sm font-medium bg-white"
+                      className="flex-grow p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-200 outline-none text-sm font-medium bg-white"
                     />
                     <datalist id="disease-suggestions">
                       {diseaseOptions.map((d, i) => (
                         <option key={i} value={d} />
                       ))}
                     </datalist>
-                    <button type="submit" disabled={!newDisease.trim()} className="px-5 py-3 bg-white border border-[#f26522] text-[#f26522] font-bold rounded-xl hover:bg-orange-50 transition-colors disabled:opacity-50 disabled:border-gray-200 disabled:text-gray-400 disabled:bg-gray-50 shadow-sm">
+                    <button type="submit" disabled={!newDisease.trim()} className="px-5 py-3 bg-white border border-[#f26522] text-[#f26522] font-bold rounded-xl hover:bg-orange-50 transition-colors disabled:opacity-50 shadow-sm">
                       เพิ่ม
                     </button>
                   </form>
                 </div>
-
               </div>
             </section>
-
           </div>
         </div>
 
         <div className="bg-gray-50 px-8 py-6 border-t border-gray-100 flex flex-col sm:flex-row gap-3 justify-end">
           <button 
+            type="button"
             onClick={() => router.back()}
-            className="px-8 py-3.5 bg-white border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-100 hover:text-gray-800 transition-colors shadow-sm w-full sm:w-auto"
+            className="px-8 py-3.5 bg-white border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-100 transition-colors shadow-sm w-full sm:w-auto"
           >
             ยกเลิก
           </button>
           <button 
+            type="button"
+            disabled={isSaving}
             onClick={handleSave}
-            className="px-8 py-3.5 bg-[#f26522] hover:bg-orange-600 text-white font-bold rounded-xl transition-all shadow-md hover:shadow-lg w-full sm:w-auto"
+            className="px-8 py-3.5 bg-[#f26522] hover:bg-orange-600 text-white font-bold rounded-xl transition-all shadow-md w-full sm:w-auto disabled:opacity-50"
           >
-            บันทึกข้อมูล
+            {isSaving ? "กำลังบันทึกข้อมูล..." : "บันทึกข้อมูล"}
           </button>
         </div>
 
