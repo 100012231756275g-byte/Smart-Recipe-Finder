@@ -58,12 +58,12 @@ const initialCategories = [
 ];
 
 const OPTIONAL_PANTRY = [
-  "น้ำปลา", "ซีอิ๊วขาว", "ซอสปรุงรส", "ซอสหอยนางรม", "น้ำมันหอย",
+  "กระเทียม", "กระเทียมสับ", "น้ำมัน", "น้ำมันพืช", "น้ำมันหอย",
+  "น้ำปลา", "ซีอิ๊วขาว", "ซอสปรุงรส", "ซอสหอยนางรม",
   "น้ำตาล", "น้ำตาลทราย", "น้ำตาลปี๊บ", "เกลือ", "ผงปรุงรส", "ผงชูรส", "รสดี",
-  "น้ำมัน", "น้ำมันพืช", "พริกไทย", "พริกไทยป่น", "ซอสมะเขือเทศ", "ซอสพริก",
+  "พริกไทย", "พริกไทยป่น", "ซอสมะเขือเทศ", "ซอสพริก",
   "ซีอิ๊วดำ", "น้ำส้มสายชู", "น้ำเปล่า", "น้ำซุป"
 ];
-
 const substitutionDictionary: Record<string, string> = {
   "หมูสับ": "ไก่สับ หรือ เนื้อสับ",
   "หมูชิ้น": "ไก่ชิ้น หรือ เนื้อชิ้น",
@@ -276,6 +276,7 @@ export default function SearchIngredientsPage() {
     });
   }
 
+ // --- ฟังก์ชันวิเคราะห์สูตรอาหาร ---
   const analyzeRecipes = () => {
     if (selectedIngredients.length === 0) return { exactMatch: [], partialMatch: [] };
 
@@ -286,33 +287,40 @@ export default function SearchIngredientsPage() {
       const recipeIngs = recipe.ingredients || [];
       if (recipeIngs.length === 0) return;
 
+      // ค้นหาวัตถุดิบทั้งหมดที่ผู้ใช้ยังไม่มี
       const missingIngredients = recipeIngs.filter(
-        ing => !selectedIngredients.some(sel => isIngredientMatch(ing, sel))
+        (ing) => !selectedIngredients.some((sel) => isIngredientMatch(ing, sel))
       );
 
+      // วัตถุดิบหลักที่ขาด (ตัดเครื่องปรุงพื้นฐานในครัวออก)
       const missingCoreIngredients = missingIngredients.filter(
-        ing => !OPTIONAL_PANTRY.some(p => ing.includes(p))
+        (ing) => !OPTIONAL_PANTRY.some((p) => ing.includes(p))
       );
 
       const totalIngs = recipeIngs.length;
       const matchedCount = totalIngs - missingIngredients.length;
       const matchPercentage = Math.round((matchedCount / totalIngs) * 100);
 
-      const missingSuggestions = missingIngredients.map(missing => {
-        const foundKey = Object.keys(substitutionDictionary).find(key => missing.includes(key));
-        if (foundKey) return `ขาด ${missing} ➜ ใช้: ${substitutionDictionary[foundKey]}`;
-        return null;
-      }).filter(Boolean) as string[];
+      // คำแนะนำการทดแทนวัตถุดิบ
+      const missingSuggestions = missingIngredients
+        .map((missing) => {
+          const foundKey = Object.keys(substitutionDictionary).find((key) => missing.includes(key));
+          if (foundKey) return `ขาด ${missing} ➜ ใช้: ${substitutionDictionary[foundKey]}`;
+          return null;
+        })
+        .filter(Boolean) as string[];
 
       const healthSuggestions: string[] = [];
       if (isUserLoggedIn && userDiseases.length > 0) {
-        recipeIngs.forEach(ing => {
-          userDiseases.forEach(disease => {
+        recipeIngs.forEach((ing) => {
+          userDiseases.forEach((disease) => {
             const riskyKeywords = healthRules[disease] || [];
-            if (riskyKeywords.some(risk => ing.includes(risk))) {
-              const subKey = Object.keys(healthySubstitutes).find(k => ing.includes(k));
-              if (subKey && !healthSuggestions.some(s => s.includes(subKey))) {
-                healthSuggestions.push(`⚠️ เสี่ยง${disease} ➜ เลี่ยง ${subKey} เปลี่ยนไปใช้: ${healthySubstitutes[subKey]}`);
+            if (riskyKeywords.some((risk) => ing.includes(risk))) {
+              const subKey = Object.keys(healthySubstitutes).find((k) => ing.includes(k));
+              if (subKey && !healthSuggestions.some((s) => s.includes(subKey))) {
+                healthSuggestions.push(
+                  `⚠️ เสี่ยง${disease} ➜ เลี่ยง ${subKey} เปลี่ยนไปใช้: ${healthySubstitutes[subKey]}`
+                );
               }
             }
           });
@@ -326,25 +334,31 @@ export default function SearchIngredientsPage() {
         missing: missingIngredients,
         missingCount: missingIngredients.length,
         matchPercentage,
-        suggestions: combinedSuggestions
+        suggestions: combinedSuggestions,
       };
 
+      // 1. หมวดทำได้เลย: วัตถุดิบหลักครบ (ขาดเพียงเครื่องปรุงติดครัวได้)
       if (missingCoreIngredients.length === 0 && matchedCount > 0) {
         exactMatch.push({
           ...recipeAnalysis,
-          matchPercentage: Math.max(matchPercentage, 90)
+          matchPercentage: Math.max(matchPercentage, 90),
         });
-      } else if (missingIngredients.length >= 1 && missingIngredients.length <= 2 && matchedCount > 0) {
+      }
+      // 2. หมวดซื้อเพิ่ม: ขาดวัตถุดิบหลัก 1 - 3 อย่าง
+      else if (missingCoreIngredients.length >= 1 && missingCoreIngredients.length <= 3 && matchedCount > 0) {
         partialMatch.push(recipeAnalysis);
       }
     });
 
-    partialMatch.sort((a, b) => a.missingCount - b.missingCount || b.matchPercentage - a.matchPercentage);
+    // เรียงลำดับเมนูที่ขาดน้อยสุดขึ้นก่อน
+    partialMatch.sort(
+      (a, b) => a.missingCount - b.missingCount || b.matchPercentage - a.matchPercentage
+    );
+
     return { exactMatch, partialMatch };
   };
 
   const { exactMatch, partialMatch } = analyzeRecipes();
-
   const toggleIngredient = (ing: string) => {
     setSelectedIngredients(prev => {
       const next = prev.includes(ing) ? prev.filter(i => i !== ing) : [...prev, ing];

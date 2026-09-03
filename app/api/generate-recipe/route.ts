@@ -1,4 +1,3 @@
-// app/api/generate-recipe/route.ts
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 
@@ -6,64 +5,54 @@ export async function POST(req: Request) {
   try {
     const rawKey = process.env.GEMINI_API_KEY;
     if (!rawKey) {
-      return NextResponse.json({ error: "เซิร์ฟเวอร์ขาด GEMINI_API_KEY ใน .env.local" }, { status: 500 });
+      return NextResponse.json({ error: "เซิร์ฟเวอร์ขาด API Key" }, { status: 500 });
     }
 
     const apiKey = rawKey.trim();
     const genAI = new GoogleGenerativeAI(apiKey);
-
+    
     const body = await req.json();
-    const { 
-      ingredients, 
-      allergies = [], 
-      diseases = [], 
-      dietaryPreference = "ทั่วไป",
-      healthConditions = [] 
-    } = body;
+    const { ingredients, healthConditions = [] } = body; 
 
     if (!ingredients) {
       return NextResponse.json({ error: "กรุณาระบุวัตถุดิบ" }, { status: 400 });
     }
 
-    // รวมเงื่อนไขสุขภาพทั้งหมดจากหน้าบ้าน
-    const combinedAllergies = Array.from(new Set([...allergies, ...healthConditions]));
-
-    // ✅ ใช้โมเดล gemini-1.5-flash ที่มีความเร็วสูงสุดและเสถียรที่สุด
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0.7,
-      },
-    });
+    // 🌟 แก้ชื่อโมเดลเป็นรุ่นมาตรฐานที่มีอยู่จริงและฉลาดที่สุดสำหรับงานนี้
+     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const prompt = `
-คุณคือเชฟระดับมิชลินสตาร์และนักโภชนาการมืออาชีพ
-จงคิดค้น 1 สูตรอาหารที่น่าทาน ทำง่าย และดีต่อสุขภาพ จากวัตถุดิบหลักเหล่านี้: "${ingredients}"
-(คุณสามารถเสริมเครื่องปรุงพื้นฐาน เช่น น้ำปลา น้ำตาล เกลือ กระเทียม น้ำมัน ลงไปได้เท่าที่จำเป็น)
+      คุณคือเชฟระดับมิชลินสตาร์และนักโภชนาการ
+      จงคิดค้น 1 สูตรอาหารที่น่าทาน ทำง่าย และดีต่อสุขภาพ จากวัตถุดิบหลักเหล่านี้: "${ingredients}"
+      (คุณสามารถเสริมเครื่องปรุงพื้นฐาน เช่น น้ำปลา น้ำตาล เกลือ กระเทียม น้ำมัน ลงไปได้)
 
-ข้อกำหนดด้านสุขภาพของผู้ใช้งานที่ต้องปฏิบัติตามอย่างเคร่งครัด:
-- สารก่อภูมิแพ้ที่ห้ามมีเด็ดขาด: ${combinedAllergies.length > 0 ? combinedAllergies.join(", ") : "ไม่มี"}
-- โรคประจำตัวที่ต้องควบคุมสารอาหาร: ${diseases.length > 0 ? diseases.join(", ") : "ไม่มี"}
-- รูปแบบการกิน: ${dietaryPreference}
+      หลังจากคิดสูตรเสร็จแล้ว โปรดตรวจสอบวัตถุดิบทั้งหมดในสูตรของคุณ 
+      เปรียบเทียบกับรายชื่อโรคและอาการแพ้เหล่านี้: ${healthConditions.length > 0 ? healthConditions.join(', ') : 'ไม่มี'}
+      หากมีวัตถุดิบใดเสี่ยงหรือแสลงต่อโรคในรายชื่อ ให้ระบุชื่อโรคนั้นลงในฟิลด์ health_risks
 
-ส่งคำตอบกลับมาเป็น JSON ตามโครงสร้างนี้เท่านั้น ห้ามใส่ Markdown หรือข้อความอธิบายอื่น:
-{
-  "name": "ชื่อเมนูอาหารที่คิดค้น",
-  "kcal": "350 kcal",
-  "time": "20 นาที",
-  "image": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=600&auto=format&fit=crop",
-  "ingredients": ["วัตถุดิบ 1 พร้อมปริมาณ", "วัตถุดิบ 2 พร้อมปริมาณ"],
-  "instructions": ["ขั้นตอนที่ 1...", "ขั้นตอนที่ 2...", "ขั้นตอนที่ 3..."],
-  "health_risks": []
-}
-`;
+      ห้ามมีคำอธิบายนำหน้า ห้ามมีข้อความต่อท้าย ส่งกลับมาเป็น JSON โครงสร้างตามนี้เป๊ะๆ:
+      {
+        "name": "ชื่อเมนูอาหารสุดน่ากิน",
+        "description": "คำบรรยายเมนูสั้นๆ 1-2 บรรทัดให้น่าทาน",
+        "calories": 350,
+        "ingredients": ["วัตถุดิบ 1 พร้อมปริมาณ", "วัตถุดิบ 2 พร้อมปริมาณ"],
+        "steps": ["ขั้นตอนการทำที่ 1...", "ขั้นตอนการทำที่ 2..."],
+        "health_risks": ["ชื่อโรคที่อาจเป็นอันตรายจากรายชื่อ (ถ้าปลอดภัย 100% ให้ใส่เป็น Array ว่าง [])"]
+      }
+    `;
 
-    console.log("🚀 กำลังส่งคำสั่งไปหา Gemini (gemini-1.5-flash)...");
+    console.log("🚀 กำลังส่งคำสั่งไปหา Gemini (คิดสูตร + ตรวจสุขภาพ)...");
     const result = await model.generateContent(prompt);
+    
     const text = result.response.text();
+    console.log("✅ AI ตอบกลับมาแล้ว (ดิบ):", text);
 
-    const recipeData = JSON.parse(text);
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error("AI ไม่ได้ส่ง JSON กลับมา");
+    }
+
+    const recipeData = JSON.parse(jsonMatch[0]);
     return NextResponse.json(recipeData);
 
   } catch (error) {
