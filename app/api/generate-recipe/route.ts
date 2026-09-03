@@ -1,116 +1,63 @@
-// app/api/generate-recipe/route.ts
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
     const rawKey = process.env.GEMINI_API_KEY;
+    if (!rawKey) {
+      return NextResponse.json({ error: "เซิร์ฟเวอร์ขาด API Key" }, { status: 500 });
+    }
+
+    const apiKey = rawKey.trim();
+    const genAI = new GoogleGenerativeAI(apiKey);
+    
     const body = await req.json();
-    const { 
-      ingredients = "", 
-      allergies = [], 
-      diseases = [], 
-      dietaryPreference = "ทั่วไป" 
-    } = body;
+    const { ingredients, healthConditions = [] } = body; 
 
     if (!ingredients) {
       return NextResponse.json({ error: "กรุณาระบุวัตถุดิบ" }, { status: 400 });
     }
 
-    // 🎲 สุ่มสไตล์อาหาร เพื่อบังคับให้ AI ไม่คิดเมนูซ้ำแบบเดิม
-    const cookingStyles = [
-      "ผัดหอมกลิ่นกระทะ", "ต้มจืด/แกงร้อนๆ", "ยำรสจัดจ้าน", 
-      "ทอดกรอบทรงเครื่อง", "ตุ๋นยาจีน/นึ่งซีอิ๊ว", "ข้าวผัดโบราณ/ข้าวอบ", "สไตล์อาหารจานด่วนฟิวชั่น"
-    ];
-    const randomStyle = cookingStyles[Math.floor(Math.random() * cookingStyles.length)];
-    const randomSeed = Math.floor(Math.random() * 10000);
+    // 🌟 แก้ชื่อโมเดลเป็นรุ่นมาตรฐานที่มีอยู่จริงและฉลาดที่สุดสำหรับงานนี้
+    const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
 
-    let recipeData = null;
+    const prompt = `
+      คุณคือเชฟระดับมิชลินสตาร์และนักโภชนาการ
+      จงคิดค้น 1 สูตรอาหารที่น่าทาน ทำง่าย และดีต่อสุขภาพ จากวัตถุดิบหลักเหล่านี้: "${ingredients}"
+      (คุณสามารถเสริมเครื่องปรุงพื้นฐาน เช่น น้ำปลา น้ำตาล เกลือ กระเทียม น้ำมัน ลงไปได้)
 
-    if (rawKey) {
-      const apiKey = rawKey.trim();
-      const genAI = new GoogleGenerativeAI(apiKey);
+      หลังจากคิดสูตรเสร็จแล้ว โปรดตรวจสอบวัตถุดิบทั้งหมดในสูตรของคุณ 
+      เปรียบเทียบกับรายชื่อโรคและอาการแพ้เหล่านี้: ${healthConditions.length > 0 ? healthConditions.join(', ') : 'ไม่มี'}
+      หากมีวัตถุดิบใดเสี่ยงหรือแสลงต่อโรคในรายชื่อ ให้ระบุชื่อโรคนั้นลงในฟิลด์ health_risks
 
-      const prompt = `
-คุณคือเชฟระดับมิชลินสตาร์และนักโภชนาการ
-จงคิด 1 สูตรอาหารที่แปลกใหม่ สร้างสรรค์ และไม่ซ้ำเดิม โดยใช้วัตถุดิบหลักเหล่านี้: "${ingredients}"
-แนวทางการปรุงของรอบนี้ (Seed: ${randomSeed}): สไตล์ "${randomStyle}"
-
-ข้อกำหนดสุขภาพที่ต้องปฏิบัติตามอย่างเคร่งครัด:
-- สารก่อภูมิแพ้ที่ห้ามมี: ${allergies.length > 0 ? allergies.join(", ") : "ไม่มี"}
-- โรคประจำตัวที่ต้องคุมสารอาหาร: ${diseases.length > 0 ? diseases.join(", ") : "ไม่มี"}
-- รูปแบบอาหาร: ${dietaryPreference}
-
-ตอบกลับเป็น JSON รูปแบบนี้เท่านั้น ห้ามใส่ Markdown:
-{
-  "name": "ชื่อเมนูอาหารใหม่ที่น่าทาน",
-  "kcal": "ประมาณพลังงาน เช่น 340 kcal",
-  "time": "เวลาทำ เช่น 15 นาที",
-  "image": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=600&auto=format&fit=crop",
-  "ingredients": ["วัตถุดิบ 1 พร้อมปริมาณ", "วัตถุดิบ 2 พร้อมปริมาณ"],
-  "instructions": ["ขั้นตอนที่ 1...", "ขั้นตอนที่ 2...", "ขั้นตอนที่ 3..."]
-}
-`;
-
-      const candidateModels = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-pro"];
-
-      for (const modelName of candidateModels) {
-        try {
-          const model = genAI.getGenerativeModel({
-            model: modelName,
-            generationConfig: { 
-              responseMimeType: "application/json",
-              temperature: 1.0 // 🌟 เพิ่มความหลากหลายในการสุ่มความคิด
-            },
-          });
-
-          const result = await model.generateContent(prompt);
-          const text = result.response.text();
-          const jsonMatch = text.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            recipeData = JSON.parse(jsonMatch[0]);
-            break;
-          }
-        } catch {
-          continue;
-        }
+      ห้ามมีคำอธิบายนำหน้า ห้ามมีข้อความต่อท้าย ส่งกลับมาเป็น JSON โครงสร้างตามนี้เป๊ะๆ:
+      {
+        "name": "ชื่อเมนูอาหารสุดน่ากิน",
+        "description": "คำบรรยายเมนูสั้นๆ 1-2 บรรทัดให้น่าทาน",
+        "calories": 350,
+        "ingredients": ["วัตถุดิบ 1 พร้อมปริมาณ", "วัตถุดิบ 2 พร้อมปริมาณ"],
+        "steps": ["ขั้นตอนการทำที่ 1...", "ขั้นตอนการทำที่ 2..."],
+        "health_risks": ["ชื่อโรคที่อาจเป็นอันตรายจากรายชื่อ (ถ้าปลอดภัย 100% ให้ใส่เป็น Array ว่าง [])"]
       }
+    `;
+
+    console.log("🚀 กำลังส่งคำสั่งไปหา Gemini (คิดสูตร + ตรวจสุขภาพ)...");
+    const result = await model.generateContent(prompt);
+    
+    const text = result.response.text();
+    console.log("✅ AI ตอบกลับมาแล้ว (ดิบ):", text);
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error("AI ไม่ได้ส่ง JSON กลับมา");
     }
 
-    // 🛡️ Fallback Randomizer: ถ้า API มีปัญหา ระบบสำรองก็ยังสุ่มเมนูใหม่ได้ ไม่ซ้ำแบบเดิม
-    if (!recipeData) {
-      const ingList = ingredients.split(",").map((s: string) => s.trim()).filter(Boolean);
-      const fallbackThemes = [
-        { verb: "คั่วพริกเกลือทรงเครื่อง", kcal: "310 kcal", time: "12 นาที" },
-        { verb: "ต้มซุปร้อนสไตล์โฮมเมด", kcal: "220 kcal", time: "18 นาที" },
-        { verb: "ผัดไข่ข้นกระทะร้อน", kcal: "340 kcal", time: "10 นาที" },
-        { verb: "ยำสมุนไพรโบราณ", kcal: "250 kcal", time: "15 นาที" },
-        { verb: "อบซีอิ๊วหอมละมุน", kcal: "290 kcal", time: "20 นาที" }
-      ];
-      const selectedTheme = fallbackThemes[Math.floor(Math.random() * fallbackThemes.length)];
-
-      recipeData = {
-        name: `${ingList[0] || "เมนูสร้างสรรค์"} ${selectedTheme.verb}`,
-        kcal: selectedTheme.kcal,
-        time: selectedTheme.time,
-        image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=600&auto=format&fit=crop",
-        ingredients: [
-          ...ingList,
-          diseases.includes("ความดันโลหิตสูง") ? "ซีอิ๊วขาวลดโซเดียม 1 ช้อนชา" : "ซีอิ๊วขาว 1 ช้อนโต๊ะ",
-          "เครื่องปรุงรสพื้นฐานตามชอบ"
-        ],
-        instructions: [
-          `เตรียมและหั่น ${ingList.join(", ")} ให้พร้อมสำหรับการปรุง`,
-          `ตั้งไฟและเริ่มปรุงอาหารตามสไตล์ ${selectedTheme.verb}`,
-          "ปรุงรสชาติอย่างระมัดระวังตามเกณฑ์สุขภาพ ตักใส่จานพร้อมเสิร์ฟ"
-        ]
-      };
-    }
-
+    const recipeData = JSON.parse(jsonMatch[0]);
     return NextResponse.json(recipeData);
 
   } catch (error) {
-    console.error("Generate API Error:", error);
-    return NextResponse.json({ error: "เกิดข้อผิดพลาดในการประมวลผล" }, { status: 500 });
+    console.error("❌ AI Error เต็มๆ:", error);
+    const errMsg = error instanceof Error ? error.message : "AI ขัดข้องชั่วคราว";
+    return NextResponse.json({ error: errMsg }, { status: 500 });
   }
 }
