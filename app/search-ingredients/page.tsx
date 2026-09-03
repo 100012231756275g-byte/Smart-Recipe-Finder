@@ -148,6 +148,7 @@ export default function SearchIngredientsPage() {
   // 🌟 AI States
   const [isAILoading, setIsAILoading] = useState(false);
   const [aiRecipe, setAiRecipe] = useState<Recipe | null>(null);
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
 
   const USER_EMAIL = "ko@cookcook.com";
 
@@ -170,22 +171,15 @@ export default function SearchIngredientsPage() {
 
       const data = await response.json();
       if (response.ok && data) {
-        const recipePayload: Recipe = {
+        setAiRecipe({
           id: "ai-" + Date.now(),
           name: data.name || "เมนูสร้างสรรค์โดย AI",
-          kcal: data.kcal || (data.calories ? `${data.calories} kcal` : "350 kcal"),
+          kcal: data.kcal || "350 kcal",
           time: data.time || "20 นาที",
           image: data.image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=600&auto=format&fit=crop",
           ingredients: data.ingredients || selectedIngredients,
           instructions: data.instructions || data.steps || ["ปรุงวัตถุดิบให้สุกตามลำดับ"]
-        };
-
-        setAiRecipe(recipePayload);
-        sessionStorage.setItem("aiGeneratedRecipe", JSON.stringify({
-          ...recipePayload,
-          steps: recipePayload.instructions,
-          calories: recipePayload.kcal
-        }));
+        });
       } else {
         alert(`❌ เกิดข้อผิดพลาด: ${data.error || "ระบบไม่สามารถคิดสูตรได้"}`);
       }
@@ -478,6 +472,61 @@ export default function SearchIngredientsPage() {
         </div>
       )}
 
+      {/* 🌟 Modal แสดงวิธีทำสูตรของ AI */}
+      {isAiModalOpen && aiRecipe && (
+        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white max-w-lg w-full max-h-[85vh] rounded-[2rem] shadow-2xl overflow-hidden flex flex-col">
+            <div className="relative h-48 w-full bg-purple-900 shrink-0">
+              <Image src={aiRecipe.image} alt={aiRecipe.name} fill className="object-cover opacity-80" />
+              <button 
+                onClick={() => setIsAiModalOpen(false)}
+                className="absolute top-4 right-4 bg-black/50 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold hover:bg-black"
+              >
+                ✕
+              </button>
+              <div className="absolute bottom-3 left-4 right-4">
+                <span className="bg-purple-600 text-white text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider">AI Master Chef</span>
+                <h2 className="text-xl font-extrabold text-white mt-1 drop-shadow-md">{aiRecipe.name}</h2>
+              </div>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4 text-sm text-gray-700">
+              <div className="flex gap-4 bg-purple-50 p-3 rounded-2xl text-xs font-bold text-purple-700">
+                <span>🔥 {aiRecipe.kcal}</span>
+                <span>⏱️ {aiRecipe.time}</span>
+              </div>
+
+              <div>
+                <h4 className="font-extrabold text-gray-900 mb-2">วัตถุดิบที่ใช้:</h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {aiRecipe.ingredients.map((ing, i) => (
+                    <span key={i} className="bg-gray-100 text-gray-800 px-2.5 py-1 rounded-lg text-xs font-semibold">{ing}</span>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-extrabold text-gray-900 mb-2">ขั้นตอนการทำ:</h4>
+                <ol className="list-decimal pl-5 space-y-2 text-xs leading-relaxed font-medium">
+                  {aiRecipe.instructions?.map((step, idx) => (
+                    <li key={idx}>{step}</li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">
+              <button 
+                onClick={() => setIsAiModalOpen(false)}
+                className="bg-gray-900 text-white px-6 py-2 rounded-xl text-xs font-bold hover:bg-gray-800"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <main className="flex-grow w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-24 px-4">
         
         {/* Banner Login */}
@@ -562,7 +611,7 @@ export default function SearchIngredientsPage() {
         ) : (
           <div className="w-full max-w-5xl space-y-10">
             
-            {/* 🌟 การ์ด AI Recipe */}
+            {/* 🌟 ไฮไลต์เมนูที่ AI คิดค้นขึ้นมาใหม่ (Inline AI Recipe Section พร้อมปุ่ม สุ่มเมนูอื่น) */}
             {aiRecipe && (
               <div className="bg-gradient-to-br from-purple-900 to-indigo-950 text-white rounded-[2rem] p-6 sm:p-8 shadow-xl relative overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
                 <div className="absolute -top-12 -right-12 w-48 h-48 bg-purple-500/20 rounded-full blur-3xl pointer-events-none"></div>
@@ -586,17 +635,10 @@ export default function SearchIngredientsPage() {
                     </div>
                   </div>
 
-                  {/* 🌟 ปุ่มนำทางไปหน้า /ai-recipe */}
+                  {/* 🌟 กลุ่มปุ่มแอ็กชัน: ดูสูตร และ สุ่มเมนูอื่น */}
                   <div className="flex flex-wrap sm:flex-nowrap gap-2.5 shrink-0 w-full md:w-auto">
                     <button
-                      onClick={() => {
-                        sessionStorage.setItem("aiGeneratedRecipe", JSON.stringify({
-                          ...aiRecipe,
-                          steps: aiRecipe.instructions,
-                          calories: aiRecipe.kcal
-                        }));
-                        router.push("/ai-recipe?from=/search-ingredients");
-                      }}
+                      onClick={() => setIsAiModalOpen(true)}
                       className="flex-1 sm:flex-none bg-white text-purple-900 hover:bg-purple-50 active:scale-95 font-extrabold px-5 py-3 rounded-2xl shadow-lg transition-all text-xs sm:text-sm flex items-center justify-center gap-2"
                     >
                       📖 ดูสูตรและวิธีทำ
