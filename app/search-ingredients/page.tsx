@@ -64,6 +64,7 @@ const OPTIONAL_PANTRY = [
   "พริกไทย", "พริกไทยป่น", "ซอสมะเขือเทศ", "ซอสพริก",
   "ซีอิ๊วดำ", "น้ำส้มสายชู", "น้ำเปล่า", "น้ำซุป"
 ];
+
 const substitutionDictionary: Record<string, string> = {
   "หมูสับ": "ไก่สับ หรือ เนื้อสับ",
   "หมูชิ้น": "ไก่ชิ้น หรือ เนื้อชิ้น",
@@ -144,14 +145,14 @@ export default function SearchIngredientsPage() {
   const [userDiseases, setUserDiseases] = useState<string[]>([]);
   const [userDiet, setUserDiet] = useState<string>("ทั่วไป");
   
-  // 🌟 AI States สำหรับแสดงผลบนหน้านี้โดยตรง
+  // 🌟 AI States
   const [isAILoading, setIsAILoading] = useState(false);
   const [aiRecipe, setAiRecipe] = useState<Recipe | null>(null);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
 
   const USER_EMAIL = "ko@cookcook.com";
 
-  // 🤖 ยิงฟังก์ชัน AI พร้อมส่งเงื่อนไขสุขภาพกำกับ
+  // 🤖 ฟังก์ชันเรียก AI คิดสูตร
   const handleGenerateMenuWithAI = async () => {
     if (selectedIngredients.length === 0) return;
     setIsAILoading(true);
@@ -276,7 +277,7 @@ export default function SearchIngredientsPage() {
     });
   }
 
- // --- ฟังก์ชันวิเคราะห์สูตรอาหาร ---
+  // --- ฟังก์ชันวิเคราะห์สูตรอาหาร ---
   const analyzeRecipes = () => {
     if (selectedIngredients.length === 0) return { exactMatch: [], partialMatch: [] };
 
@@ -287,12 +288,10 @@ export default function SearchIngredientsPage() {
       const recipeIngs = recipe.ingredients || [];
       if (recipeIngs.length === 0) return;
 
-      // ค้นหาวัตถุดิบทั้งหมดที่ผู้ใช้ยังไม่มี
       const missingIngredients = recipeIngs.filter(
         (ing) => !selectedIngredients.some((sel) => isIngredientMatch(ing, sel))
       );
 
-      // วัตถุดิบหลักที่ขาด (ตัดเครื่องปรุงพื้นฐานในครัวออก)
       const missingCoreIngredients = missingIngredients.filter(
         (ing) => !OPTIONAL_PANTRY.some((p) => ing.includes(p))
       );
@@ -301,7 +300,6 @@ export default function SearchIngredientsPage() {
       const matchedCount = totalIngs - missingIngredients.length;
       const matchPercentage = Math.round((matchedCount / totalIngs) * 100);
 
-      // คำแนะนำการทดแทนวัตถุดิบ
       const missingSuggestions = missingIngredients
         .map((missing) => {
           const foundKey = Object.keys(substitutionDictionary).find((key) => missing.includes(key));
@@ -312,12 +310,12 @@ export default function SearchIngredientsPage() {
 
       const healthSuggestions: string[] = [];
       if (isUserLoggedIn && userDiseases.length > 0) {
-        recipeIngs.forEach((ing) => {
-          userDiseases.forEach((disease) => {
+        recipeIngs.forEach(ing => {
+          userDiseases.forEach(disease => {
             const riskyKeywords = healthRules[disease] || [];
-            if (riskyKeywords.some((risk) => ing.includes(risk))) {
-              const subKey = Object.keys(healthySubstitutes).find((k) => ing.includes(k));
-              if (subKey && !healthSuggestions.some((s) => s.includes(subKey))) {
+            if (riskyKeywords.some(risk => ing.includes(risk))) {
+              const subKey = Object.keys(healthySubstitutes).find(k => ing.includes(k));
+              if (subKey && !healthSuggestions.some(s => s.includes(subKey))) {
                 healthSuggestions.push(
                   `⚠️ เสี่ยง${disease} ➜ เลี่ยง ${subKey} เปลี่ยนไปใช้: ${healthySubstitutes[subKey]}`
                 );
@@ -337,20 +335,16 @@ export default function SearchIngredientsPage() {
         suggestions: combinedSuggestions,
       };
 
-      // 1. หมวดทำได้เลย: วัตถุดิบหลักครบ (ขาดเพียงเครื่องปรุงติดครัวได้)
       if (missingCoreIngredients.length === 0 && matchedCount > 0) {
         exactMatch.push({
           ...recipeAnalysis,
           matchPercentage: Math.max(matchPercentage, 90),
         });
-      }
-      // 2. หมวดซื้อเพิ่ม: ขาดวัตถุดิบหลัก 1 - 3 อย่าง
-      else if (missingCoreIngredients.length >= 1 && missingCoreIngredients.length <= 3 && matchedCount > 0) {
+      } else if (missingCoreIngredients.length >= 1 && missingCoreIngredients.length <= 3 && matchedCount > 0) {
         partialMatch.push(recipeAnalysis);
       }
     });
 
-    // เรียงลำดับเมนูที่ขาดน้อยสุดขึ้นก่อน
     partialMatch.sort(
       (a, b) => a.missingCount - b.missingCount || b.matchPercentage - a.matchPercentage
     );
@@ -359,13 +353,14 @@ export default function SearchIngredientsPage() {
   };
 
   const { exactMatch, partialMatch } = analyzeRecipes();
+
   const toggleIngredient = (ing: string) => {
     setSelectedIngredients(prev => {
       const next = prev.includes(ing) ? prev.filter(i => i !== ing) : [...prev, ing];
       logActivity('fridge_select', `กดเลือกวัตถุดิบ: ${ing}`);
       return next;
     });
-    setAiRecipe(null); // รีเซ็ตเมนู AI เมื่อมีการเปลี่ยนวัตถุดิบ
+    setAiRecipe(null);
   };
 
   const renderRecipeCard = (recipe: AnalyzedRecipe | Recipe, isPartial = false) => {
@@ -616,7 +611,7 @@ export default function SearchIngredientsPage() {
         ) : (
           <div className="w-full max-w-5xl space-y-10">
             
-            {/* 🌟 ไฮไลต์เมนูที่ AI คิดค้นขึ้นมาใหม่ (Inline AI Recipe Section) */}
+            {/* 🌟 ไฮไลต์เมนูที่ AI คิดค้นขึ้นมาใหม่ (Inline AI Recipe Section พร้อมปุ่ม สุ่มเมนูอื่น) */}
             {aiRecipe && (
               <div className="bg-gradient-to-br from-purple-900 to-indigo-950 text-white rounded-[2rem] p-6 sm:p-8 shadow-xl relative overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
                 <div className="absolute -top-12 -right-12 w-48 h-48 bg-purple-500/20 rounded-full blur-3xl pointer-events-none"></div>
@@ -640,12 +635,21 @@ export default function SearchIngredientsPage() {
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => setIsAiModalOpen(true)}
-                    className="bg-white text-purple-900 hover:bg-purple-50 active:scale-95 font-extrabold px-6 py-3 rounded-2xl shadow-lg transition-all text-sm shrink-0 flex items-center gap-2"
-                  >
-                    📖 ดูสูตรและวิธีทำ
-                  </button>
+                  {/* 🌟 กลุ่มปุ่มแอ็กชัน: ดูสูตร และ สุ่มเมนูอื่น */}
+                  <div className="flex flex-wrap sm:flex-nowrap gap-2.5 shrink-0 w-full md:w-auto">
+                    <button
+                      onClick={() => setIsAiModalOpen(true)}
+                      className="flex-1 sm:flex-none bg-white text-purple-900 hover:bg-purple-50 active:scale-95 font-extrabold px-5 py-3 rounded-2xl shadow-lg transition-all text-xs sm:text-sm flex items-center justify-center gap-2"
+                    >
+                      📖 ดูสูตรและวิธีทำ
+                    </button>
+                    <button
+                      onClick={handleGenerateMenuWithAI}
+                      className="flex-1 sm:flex-none bg-purple-600/70 hover:bg-purple-600 border border-purple-400/30 text-white active:scale-95 font-extrabold px-4 py-3 rounded-2xl shadow-lg transition-all text-xs sm:text-sm flex items-center justify-center gap-1.5"
+                    >
+                      🔄 สุ่มเมนูอื่น
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
