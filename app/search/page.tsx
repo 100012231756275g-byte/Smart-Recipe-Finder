@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import ExpiringBanner from "../components/ExpiringBanner"; // 🌟 ดึงแบนเนอร์แจ้งเตือนวัตถุดิบ
 
 // --- Types ---
 interface Recipe {
@@ -73,12 +74,13 @@ function SearchComponent() {
   const [userAllergies, setUserAllergies] = useState<string[]>([]);
   const [userDiseases, setUserDiseases] = useState<string[]>([]);
 
-// ✅ วิธีมาตรฐาน React: Sync ค่าระหว่าง Render ป้องกัน Cascading Render และแก้ Error ทันที
-const [prevQueryParam, setPrevQueryParam] = useState(queryParam);
-if (queryParam !== prevQueryParam) {
-  setPrevQueryParam(queryParam);
-  setSearchQuery(queryParam);
-}
+  // ✅ วิธีมาตรฐาน React: Sync ค่าระหว่าง Render ป้องกัน Cascading Render
+  const [prevQueryParam, setPrevQueryParam] = useState(queryParam);
+  if (queryParam !== prevQueryParam) {
+    setPrevQueryParam(queryParam);
+    setSearchQuery(queryParam);
+  }
+
   const calculateMacros = (kcalString: string, goal: string) => {
     const kcal = parseInt(kcalString.replace(/\D/g, "")) || 350;
     let p = 0, c = 0, f = 0;
@@ -135,7 +137,7 @@ if (queryParam !== prevQueryParam) {
     loadInitialData();
   }, []);
 
-  // 🧠 ใช้ useMemo คำนวณ Derived State แบบ Pure Component (ลดกระตุกและป้องกัน ESLint Warning)
+  // 🧠 ใช้ useMemo คำนวณ Derived State แบบ Pure Component
   const filteredRecipes = useMemo(() => {
     let result = [...allRecipes];
 
@@ -225,7 +227,10 @@ if (queryParam !== prevQueryParam) {
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] font-sans pb-24">
-      {/* 🌟 ส่วน Header โภชนาการ (ปรับ Padding และขนาดตัวอักษรให้เข้ากับมือถือ) */}
+      {/* 🌟 1. แบนเนอร์เตือนวัตถุดิบหมดอายุ + เร่งค้นหาเมนู */}
+      <ExpiringBanner />
+
+      {/* 🌟 2. ส่วน Header โภชนาการ */}
       <div className="bg-white border-b border-gray-100 pt-8 sm:pt-14 pb-8 sm:pb-12 px-4 shadow-[0_10px_30px_rgb(0,0,0,0.02)] relative overflow-hidden">
         <div className="max-w-3xl mx-auto text-center relative z-10">
           
@@ -269,7 +274,7 @@ if (queryParam !== prevQueryParam) {
             </div>
           </div>
 
-          {/* 🌟 แถบเลือก 5 เป้าหมายโภชนาการ (ย่อขนาดบนมือถือ ไม่ล้นขอบจอ) */}
+          {/* 🌟 แถบเลือก 5 เป้าหมายโภชนาการ */}
           <div className="flex flex-wrap justify-center gap-2 sm:gap-3">
             {healthGoals.map((goal) => (
               <button
