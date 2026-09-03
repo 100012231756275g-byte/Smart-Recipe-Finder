@@ -1,11 +1,27 @@
-import type { Metadata } from "next";
+// app/layout.tsx
+import type { Metadata, Viewport } from "next";
+import { Prompt } from "next/font/google";
 import "./globals.css";
-import Navbar from "./components/Navbar";
-import Footer from "./components/Footer"; // 🌟 Import เข้ามา
+import Navbar from "./components/Navbar"; // ✅ ดึง Navbar จาก app/components/Navbar
+
+// 🌟 ตั้งค่าฟอนต์ภาษาไทยมาตรฐาน เพื่อให้มือถือและคอมเรนเดอร์ขนาดตัวอักษรเท่ากัน 100%
+const prompt = Prompt({
+  subsets: ["latin", "thai"],
+  weight: ["300", "400", "500", "600", "700", "800"],
+  variable: "--font-prompt",
+});
 
 export const metadata: Metadata = {
   title: "cook cook - Smart Recipe Finder",
-  description: "AI ช่วยวิเคราะห์สูตรอาหารเพื่อสุขภาพ",
+  description: "ระบบแนะนำเมนูอาหารอัจฉริยะเพื่อสุขภาพ",
+};
+
+// 🔒 ล็อกขนาดหน้าจอ 1:1 ป้องกันจอย่อส่วน และรองรับขอบจอโค้งของมือถือ
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
@@ -14,20 +30,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="th">
-      {/* 🌟 เพิ่มคลาส flex flex-col min-h-screen เพื่อดัน Footer ไปล่างสุดเสมอ */}
-    <body className="flex flex-col min-h-screen bg-gray-50 text-gray-900 antialiased">
+    <html lang="th" className={prompt.className}>
+      <body className="antialiased min-h-screen bg-[#fafaf9] text-gray-900 overflow-x-hidden flex flex-col">
+        {/* 🌟 แสดงแถบเมนูด้านบนอัตโนมัติทุกหน้า (Responsive ทั้งมือถือและคอม) */}
+        <Navbar />
         
-        <Navbar />  {/* 👈 พิมพ์แท็กนี้แทรกเข้าไปตรงนี้เลยครับ */}
-
-        {/* ส่วนเนื้อหาหลักของแต่ละหน้า */}
-        <main className="flex-grow">
+        {/* เนื้อหาหลักของแต่ละหน้า */}
+        <div className="flex-1 w-full">
           {children}
-        </main>
-
-        {/* 🌟 วาง Footer ไว้ตรงนี้ มันจะไปโผล่ท้ายเว็บของทุกหน้าทันที */}
-        <Footer />
-
+        </div>
       </body>
     </html>
   );

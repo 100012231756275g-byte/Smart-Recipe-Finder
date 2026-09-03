@@ -37,14 +37,14 @@ export default function ProfilePage() {
       }
 
       // ดึงข้อมูล BMI และ TDEE จาก LocalStorage
-    const savedBMI = localStorage.getItem("userBMI");
-    setUserBMI(savedBMI || null); // ถ้าถูกลบไปแล้ว ให้ตั้งเป็น null ทันที
+      const savedBMI = localStorage.getItem("userBMI");
+      setUserBMI(savedBMI || null);
 
-    const savedBMIStatus = localStorage.getItem("userBMIStatus");
-    setUserBMIStatus(savedBMIStatus || null);
+      const savedBMIStatus = localStorage.getItem("userBMIStatus");
+      setUserBMIStatus(savedBMIStatus || null);
 
-    const savedTDEE = localStorage.getItem("userTDEE");
-    setUserTDEE(savedTDEE || null);
+      const savedTDEE = localStorage.getItem("userTDEE");
+      setUserTDEE(savedTDEE || null);
     };
 
     loadUserData();
@@ -136,7 +136,7 @@ export default function ProfilePage() {
                 </div>
                 {userBMI && (
                   <button 
-                    onClick={() => router.push('/calculate')}
+                    onClick={() => router.push('/edit-profile')}
                     className="text-xs text-gray-400 hover:text-[#f26522] transition-colors underline"
                   >
                     คำนวณใหม่
@@ -174,7 +174,7 @@ export default function ProfilePage() {
                    ยังไม่ได้บันทึกค่า BMI และพลังงานที่ต้องใช้ต่อวัน เพื่อคำนวณปริมาณอาหารที่เหมาะสม
                  </p>
                  <button 
-                   onClick={() => router.push('/calculate')} 
+                   onClick={() => router.push('/edit-profile')} 
                    className="w-full bg-[#f26522] hover:bg-orange-600 active:scale-95 text-white font-bold py-3 px-4 rounded-xl transition-all text-sm shadow-md shadow-orange-500/20"
                  >
                    คำนวณค่า BMI & แคลอรี

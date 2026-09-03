@@ -24,10 +24,10 @@ const healthGoals = [
 ];
 
 // =========================================================================
-// 📚 DICTIONARIES สำหรับระบบ STRICT FILTERING (ห้ามแก้ไขคำให้หย่อนยาน)
+// 📚 DICTIONARIES สำหรับระบบ STRICT FILTERING
 // =========================================================================
 
-// 1. Plant-Based Blacklist: เนื้อสัตว์ ผลผลิต และเครื่องปรุงคาวจากสัตว์
+// 1. Plant-Based Blacklist
 const ANIMAL_ITEMS = [
   "หมู", "ไก่", "เนื้อ", "วัว", "เป็ด", "ปลา", "กุ้ง", "หอย", "หมึก", "ปู",
   "ไข่", "ไส้กรอก", "ลูกชิ้น", "เบคอน", "แฮม", "กุนเชียง", "แคบหมู", "แหนม",
@@ -35,7 +35,7 @@ const ANIMAL_ITEMS = [
   "มันหมู", "น้ำมันหมู", "ผงปรุงรสหมู", "ผงปรุงรสไก่", "รสดี", "คนอร์"
 ];
 
-// 2. Keto Blacklist: แป้ง คาร์บ และน้ำตาลทุกชนิด
+// 2. Keto Blacklist
 const KETO_CARBS_SUGARS = [
   "ข้าว", "ข้าวสวย", "ข้าวเหนียว", "เส้น", "บะหมี่", "ก๋วยเตี๋ยว", "วุ้นเส้น", "ขนมจีน",
   "มักกะโรนี", "สปาเก็ตตี้", "พาสต้า", "มาม่า", "ราเมง", "แป้ง", "แป้งทอดกรอบ", "แป้งมัน",
@@ -43,13 +43,13 @@ const KETO_CARBS_SUGARS = [
   "มันฝรั่ง", "เผือก", "มันเทศ", "ข้าวโพด", "ฟักทอง", "ซอสมะเขือเทศ", "ซอสพริก", "ซีอิ๊วดำหวาน"
 ];
 
-// 3. Fat-Loss Blacklist: ไขมันสูง ของทอด และคาร์บหนัก
+// 3. Fat-Loss Blacklist
 const FAT_LOSS_BAD_ITEMS = [
   "ทอด", "ทอดกรอบ", "ชุบแป้งทอด", "แคบหมู", "หมูกรอบ", "เบคอน", "กะทิ", "หมูสามชั้น", 
   "คอหมู", "หนังไก่", "ขาหมู", "เนย", "มายองเนส", "ข้าวเหนียว", "บะหมี่กึ่งสำเร็จรูป"
 ];
 
-// 4. High Protein Whitelist: แหล่งโปรตีนคุณภาพสูง
+// 4. High Protein Whitelist
 const CLEAN_PROTEIN_SOURCES = [
   "อกไก่", "สันในไก่", "ไก่", "เนื้อวัว", "เนื้อสันใน", "ปลา", "แซลมอน", "ทูน่า",
   "ปลากะพง", "ไข่ไก่", "ไข่ขาว", "ไข่", "กุ้ง", "เต้าหู้", "สันในหมู", "หมูเนื้อแดง"
@@ -66,6 +66,7 @@ const DISEASE_RULES: Record<string, string[]> = {
 export default function SmartSearchPage() {
   const router = useRouter();
   const [activeGoal, setActiveGoal] = useState("all");
+  const [searchQuery, setSearchQuery] = useState(""); // 🔍 State ช่องค้นหา
   
   const [allRecipes, setAllRecipes] = useState<Recipe[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -75,7 +76,7 @@ export default function SmartSearchPage() {
   const [userAllergies, setUserAllergies] = useState<string[]>([]);
   const [userDiseases, setUserDiseases] = useState<string[]>([]);
 
-  // คำนวณสัดส่วนสารอาหาร Macronutrients ตามหลักวิทยาศาสตร์การกีฬา/โภชนาการ
+  // คำนวณ Macros
   const calculateMacros = (kcalString: string, goal: string) => {
     const kcal = parseInt(kcalString.replace(/\D/g, "")) || 350;
     let p = 0, c = 0, f = 0;
@@ -100,7 +101,6 @@ export default function SmartSearchPage() {
     return { p, c, f };
   };
 
-  // โหลดข้อมูลสูตรอาหารและข้อมูลสุขภาพจาก LocalStorage
   useEffect(() => {
     const loadInitialData = async () => {
       setIsLoading(true);
@@ -133,9 +133,24 @@ export default function SmartSearchPage() {
     loadInitialData();
   }, []);
 
-  // 🧠 อัลกอริทึมคัดกรอง STRICT FILTERING ครบทั้ง 5 หมวดหมู่ (ใช้ useMemo เพื่อประสิทธิภาพสูงสุด)
+  // 🧠 อัลกอริทึมค้นหาแบบฉลาด + กรอง Strict Mode (useMemo)
   const filteredRecipes = useMemo(() => {
     let result = [...allRecipes];
+
+    // --- ด่านที่ 0: ระบบค้นหาอัจฉริยะ (Smart Query Search) ---
+    const query = searchQuery.trim().toLowerCase();
+    if (query) {
+      const searchTokens = query.split(/\s+/).filter(Boolean);
+      result = result.filter((recipe) => {
+        const nameLower = (recipe.name || "").toLowerCase();
+        const ingredientsText = (recipe.ingredients || []).join(" ").toLowerCase();
+
+        // ตรวจสอบว่าคำค้นหาทุกคำตรงกับ "ชื่อเมนู" หรือ "วัตถุดิบ" อย่างใดอย่างหนึ่ง
+        return searchTokens.every((token) => 
+          nameLower.includes(token) || ingredientsText.includes(token)
+        );
+      });
+    }
 
     // --- ด่านที่ 1: ตรวจสอบความเข้ากันได้กับโปรไฟล์ส่วนตัว ---
     if (userAllergies.length > 0) {
@@ -206,12 +221,12 @@ export default function SmartSearchPage() {
     });
 
     return result;
-  }, [activeGoal, allRecipes, userDietPreference, userAllergies, userDiseases]);
+  }, [allRecipes, searchQuery, activeGoal, userDietPreference, userAllergies, userDiseases]);
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] font-sans pb-24">
       
-      {/* 🌟 ส่วน Header โภชนาการ */}
+      {/* 🌟 ส่วน Header โภชนาการ + ช่องค้นหา */}
       <div className="bg-white border-b border-gray-100 pt-16 pb-12 px-4 shadow-[0_10px_30px_rgb(0,0,0,0.02)] relative overflow-hidden">
         <div className="max-w-3xl mx-auto text-center relative z-10">
           
@@ -225,12 +240,35 @@ export default function SmartSearchPage() {
             )}
           </div>
 
-          <h1 className="text-3xl md:text-5xl font-extrabold text-gray-900 mb-8 tracking-tight leading-tight">
+          <h1 className="text-3xl md:text-5xl font-extrabold text-gray-900 mb-6 tracking-tight leading-tight">
             บอกเป้าหมายของคุณมาสิ <br/>
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#f26522] to-[#ff4757]">
               เดี๋ยวเราจัดเมนูให้เอง
             </span>
           </h1>
+
+          {/* 🔍 ช่องค้นหาอัจฉริยะ (Smart Search Bar) */}
+          <div className="max-w-xl mx-auto mb-8 relative">
+            <div className="relative flex items-center">
+              <span className="absolute left-4 text-gray-400 text-lg">🔍</span>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="พิมพ์ชื่อเมนู หรือวัตถุดิบ (เช่น อกไก่, กุ้ง, ไข่)..."
+                className="w-full pl-12 pr-12 py-3.5 bg-gray-50 hover:bg-gray-100/80 focus:bg-white border-2 border-gray-200 focus:border-[#f26522] rounded-2xl shadow-inner text-gray-800 text-sm font-semibold placeholder-gray-400 focus:outline-none transition-all"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3.5 w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-600 flex items-center justify-center text-xs font-bold transition-colors"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
 
           {/* 🌟 แถบเลือก 5 เป้าหมายโภชนาการ */}
           <div className="flex flex-wrap justify-center gap-3">
@@ -262,6 +300,11 @@ export default function SmartSearchPage() {
               {filteredRecipes.length}
             </span>
           </h2>
+          {searchQuery && (
+            <span className="text-sm font-bold text-[#f26522] bg-orange-50 px-3 py-1 rounded-xl border border-orange-100">
+              ผลการค้นหาสำหรับ: &ldquo;{searchQuery}&rdquo;
+            </span>
+          )}
         </div>
 
         {isLoading ? (
@@ -318,17 +361,27 @@ export default function SmartSearchPage() {
           </div>
         ) : (
           <div className="bg-white rounded-[2.5rem] p-12 text-center shadow-sm border border-dashed border-gray-200 max-w-2xl mx-auto mt-10">
-            <span className="text-6xl block mb-6">🔒</span>
-            <h3 className="text-2xl font-extrabold text-gray-800 mb-3">ไม่พบเมนูที่ผ่านเกณฑ์ความปลอดภัย</h3>
+            <span className="text-6xl block mb-6">🔍</span>
+            <h3 className="text-2xl font-extrabold text-gray-800 mb-3">ไม่พบเมนูที่ตรงกับเงื่อนไข</h3>
             <p className="text-gray-500 font-medium max-w-md mx-auto mb-8">
-              ระบบตรวจสอบพบว่าเมนูอาหารในฐานข้อมูลมีวัตถุดิบที่ไม่ผ่านเกณฑ์ความเข้มงวดของหมวดหมู่นี้ หรือขัดกับประวัติโรคประจำตัวของคุณ
+              ไม่พบสูตรอาหารที่มีคำว่า &ldquo;{searchQuery}&rdquo; หรือเมนูที่ตรงอาจไม่ผ่านเกณฑ์ความปลอดภัยของเป้าหมายสุขภาพ/โรคประจำตัวของคุณ
             </p>
-            <button 
-              onClick={() => setActiveGoal("all")}
-              className="bg-gray-900 hover:bg-gray-800 text-white font-bold px-8 py-3.5 rounded-full transition-transform active:scale-95 shadow-md"
-            >
-              รีเซ็ตกลับเป็นเมนูแนะนำทั่วไป
-            </button>
+            <div className="flex justify-center gap-3">
+              {searchQuery && (
+                <button 
+                  onClick={() => setSearchQuery("")}
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-6 py-3 rounded-full transition-all"
+                >
+                  ล้างคำค้นหา
+                </button>
+              )}
+              <button 
+                onClick={() => { setSearchQuery(""); setActiveGoal("all"); }}
+                className="bg-gray-900 hover:bg-gray-800 text-white font-bold px-6 py-3 rounded-full transition-all shadow-md"
+              >
+                รีเซ็ตตัวกรองทั้งหมด
+              </button>
+            </div>
           </div>
         )}
 
