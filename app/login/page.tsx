@@ -298,10 +298,8 @@ export default function LoginPage() {
               
               {isLogin && (
                 <div className="text-right mt-2">
-                  <Link 
-                    href="/forgot-password" 
-                    className={`text-sm font-medium mr-1 transition-colors ${isLocked ? 'text-gray-400 pointer-events-none' : 'text-gray-500 hover:text-[#f26522]'}`}
-                  >
+                 {/* ✅ เปลี่ยนเป็นชี้ไปหน้ากรอกอีเมลเพื่อส่งลิงก์ลับ */}
+                  <Link href="/forgot-password" className="text-sm font-medium text-gray-500 hover:text-[#f26522] ">
                     ลืมรหัสผ่าน?
                   </Link>
                 </div>
