@@ -8,12 +8,13 @@ import { useRouter } from "next/navigation";
 
 // --- Types ---
 type Recipe = {
-  id: number;
+  id: number | string;
   name: string;
   kcal: string;
   time: string;
   image: string;
   ingredients: string[];
+  instructions?: string[];
 };
 
 type AnalyzedRecipe = Recipe & {
@@ -56,15 +57,14 @@ const initialCategories = [
   }
 ];
 
-// เครื่องปรุงรสพื้นฐานติดครัวจริงๆ (ตัดผัก สมุนไพร พริก หอมแดง ออก เพื่อไม่ให้กระทบเมนูน้ำพริก/ยำ)
 const OPTIONAL_PANTRY = [
-  "น้ำปลา", "ซีอิ๊วขาว", "ซอสปรุงรส", "ซอสหอยนางรม", "น้ำมันหอย",
+  "กระเทียม", "กระเทียมสับ", "น้ำมัน", "น้ำมันพืช", "น้ำมันหอย",
+  "น้ำปลา", "ซีอิ๊วขาว", "ซอสปรุงรส", "ซอสหอยนางรม",
   "น้ำตาล", "น้ำตาลทราย", "น้ำตาลปี๊บ", "เกลือ", "ผงปรุงรส", "ผงชูรส", "รสดี",
-  "น้ำมัน", "น้ำมันพืช", "พริกไทย", "พริกไทยป่น", "ซอสมะเขือเทศ", "ซอสพริก",
+  "พริกไทย", "พริกไทยป่น", "ซอสมะเขือเทศ", "ซอสพริก",
   "ซีอิ๊วดำ", "น้ำส้มสายชู", "น้ำเปล่า", "น้ำซุป"
 ];
 
-// 📚 พจนานุกรมของทดแทน
 const substitutionDictionary: Record<string, string> = {
   "หมูสับ": "ไก่สับ หรือ เนื้อสับ",
   "หมูชิ้น": "ไก่ชิ้น หรือ เนื้อชิ้น",
@@ -100,34 +100,20 @@ const healthRules: Record<string, string[]> = {
   "โรคไขมันในเลือดสูง": ["กะทิ", "หมูสามชั้น", "เนย", "น้ำมันพืช", "ของทอด", "น้ำมัน"]
 };
 
-// ฟังก์ชันจับคู่วัตถุดิบแบบแม่นยำ ป้องกันคำสับสน
 const isIngredientMatch = (recipeIng: string, selectedIng: string) => {
   const r = recipeIng.trim().toLowerCase();
   const s = selectedIng.trim().toLowerCase();
 
-  // 1. ตรงกันแบบสมบูรณ์
   if (r === s) return true;
+  if ((r.includes("กะหล่ำปลี") && s.includes("กะหล่ำดอก")) || (r.includes("กะหล่ำดอก") && s.includes("กะหล่ำปลี"))) return false;
+  if ((r.includes("หอมแดง") && s.includes("หอมใหญ่")) || (r.includes("หอมใหญ่") && s.includes("หอมแดง"))) return false;
 
-  // 2. ป้องกันคำสับสนระหว่าง กะหล่ำปลี กับ กะหล่ำดอก
-  if ((r.includes("กะหล่ำปลี") && s.includes("กะหล่ำดอก")) || 
-      (r.includes("กะหล่ำดอก") && s.includes("กะหล่ำปลี"))) {
-    return false;
-  }
-
-  // 3. ป้องกันคำสับสนระหว่าง หอมแดง กับ หอมใหญ่
-  if ((r.includes("หอมแดง") && s.includes("หอมใหญ่")) || 
-      (r.includes("หอมใหญ่") && s.includes("หอมแดง"))) {
-    return false;
-  }
-
-  // 4. หมวดคำพ้องเฉพาะกลุ่มโปรตีนและแป้งหลัก
   if (r.includes("ไก่") && s.includes("ไก่")) return true;
   if (r.includes("หมู") && s.includes("หมู")) return true;
   if (r.includes("ข้าว") && s.includes("ข้าว")) return true;
   if (r.includes("ไข่") && s.includes("ไข่")) return true;
   if (r.includes("มักกะโรนี") && s.includes("มักกะโรนี")) return true;
 
-  // 5. จับคู่คำบางส่วนเฉพาะคำที่มีความยาว 4 ตัวอักษรขึ้นไป
   if (s.length >= 4 && r.includes(s)) return true;
   if (r.length >= 4 && s.includes(r)) return true;
 
@@ -157,33 +143,62 @@ export default function SearchIngredientsPage() {
 
   const [userAllergies, setUserAllergies] = useState<string[]>([]);
   const [userDiseases, setUserDiseases] = useState<string[]>([]);
+  const [userDiet, setUserDiet] = useState<string>("ทั่วไป");
+  
+  // 🌟 AI States
   const [isAILoading, setIsAILoading] = useState(false);
+  const [aiRecipe, setAiRecipe] = useState<Recipe | null>(null);
 
   const USER_EMAIL = "ko@cookcook.com";
 
+  // 🤖 ฟังก์ชันเรียก AI คิดสูตร
   const handleGenerateMenuWithAI = async () => {
     if (selectedIngredients.length === 0) return;
-    const ingredientNames = selectedIngredients.join(", ");
     setIsAILoading(true);
 
     try {
       const response = await fetch('/api/generate-recipe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ingredients: ingredientNames }),
+        body: JSON.stringify({ 
+          ingredients: selectedIngredients.join(", "),
+          allergies: userAllergies,
+          diseases: userDiseases,
+          dietaryPreference: userDiet
+        }),
       });
 
       const data = await response.json();
-      if (response.ok) {
-        sessionStorage.setItem("aiGeneratedRecipe", JSON.stringify(data));
-        router.push("/ai-recipe");
+      if (response.ok && data) {
+        const recipePayload: Recipe = {
+          id: "ai-" + Date.now(),
+          name: data.name || "เมนูสร้างสรรค์โดย AI",
+          kcal: data.kcal || (data.calories ? `${data.calories} kcal` : "350 kcal"),
+          time: data.time || "20 นาที",
+          image: data.image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=600&auto=format&fit=crop",
+          ingredients: data.ingredients || selectedIngredients,
+          instructions: data.instructions || data.steps || ["ปรุงวัตถุดิบให้สุกตามลำดับ"]
+        };
+
+        setAiRecipe(recipePayload);
+
+        // 🌟 บันทึกข้อมูลและวัตถุดิบตั้งต้น เพื่อให้หน้ารูปที่ 3 สแกนซ้ำได้
+        sessionStorage.setItem("aiGeneratedRecipe", JSON.stringify({
+          ...recipePayload,
+          steps: recipePayload.instructions,
+          calories: recipePayload.kcal,
+          sourceIngredients: selectedIngredients,
+          sourcePage: "/search-ingredients"
+        }));
+        sessionStorage.setItem("aiRecipeSource", "/search-ingredients");
+        sessionStorage.setItem("aiRecipeIngredients", JSON.stringify(selectedIngredients));
       } else {
-        alert(`❌ เกิดข้อผิดพลาด: ${data.error}`);
-        setIsAILoading(false);
+        alert(`❌ เกิดข้อผิดพลาด: ${data.error || "ระบบไม่สามารถคิดสูตรได้"}`);
       }
     } catch (error) {
       console.error(error);
-      alert("ระบบ AI ไม่ตอบสนองครับ");
+      alert("ระบบ AI ขัดข้อง กรุณาลองใหม่อีกครั้ง");
+    } finally {
       setIsAILoading(false);
     }
   };
@@ -210,34 +225,17 @@ export default function SearchIngredientsPage() {
       setIsUserLoggedIn(loggedIn);
 
       if (loggedIn) {
+        const savedDiet = localStorage.getItem("dietaryPreference");
+        if (savedDiet) setUserDiet(savedDiet);
+
         const savedAllergies = localStorage.getItem("allergies");
         if (savedAllergies) {
           setUserAllergies(savedAllergies.split(",").map(a => a.trim()).filter(Boolean));
-        } else {
-          const savedHealth = localStorage.getItem("healthData");
-          if (savedHealth) {
-            try {
-              const parsed = JSON.parse(savedHealth);
-              setUserAllergies(parsed.allergies || []);
-            } catch (e) {
-              console.error(e);
-            }
-          }
         }
 
         const savedDiseases = localStorage.getItem("diseases");
         if (savedDiseases) {
           setUserDiseases(savedDiseases.split(",").map(d => d.trim()).filter(Boolean));
-        } else {
-          const savedHealth = localStorage.getItem("healthData");
-          if (savedHealth) {
-            try {
-              const parsed = JSON.parse(savedHealth);
-              setUserDiseases(parsed.diseases || []);
-            } catch (e) {
-              console.error(e);
-            }
-          }
         }
       }
       setIsCheckingLogin(false);
@@ -282,7 +280,6 @@ export default function SearchIngredientsPage() {
     .map(ing => ing.name);
 
   const displayCategories = [...categorizedIngredients];
-  
   if (otherIngredients.length > 0) {
     displayCategories.push({ 
       id: "other", 
@@ -292,7 +289,7 @@ export default function SearchIngredientsPage() {
     });
   }
 
-  // --- Logic การจับคู่สูตรอาหารฉบับแก้ไขสมบูรณ์ ---
+  // --- ฟังก์ชันวิเคราะห์สูตรอาหาร (ปรับปรุงระบบจับคู่ให้แสดงเมนูซื้อเพิ่ม) ---
   const analyzeRecipes = () => {
     if (selectedIngredients.length === 0) return { exactMatch: [], partialMatch: [] };
 
@@ -303,36 +300,50 @@ export default function SearchIngredientsPage() {
       const recipeIngs = recipe.ingredients || [];
       if (recipeIngs.length === 0) return;
 
-      // ค้นหาวัตถุดิบทั้งหมดที่ผู้ใช้ยังไม่มี
-      const missingIngredients = recipeIngs.filter(
-        ing => !selectedIngredients.some(sel => isIngredientMatch(ing, sel))
+      // วัตถุดิบที่ตรงกัน
+      const matchedIngs = recipeIngs.filter((ing) =>
+        selectedIngredients.some((sel) => isIngredientMatch(ing, sel))
       );
 
-      // วัตถุดิบหลักที่ขาด (ตัดเครื่องปรุงพื้นฐานในครัวออก)
+      // วัตถุดิบที่ยังขาด
+      const missingIngredients = recipeIngs.filter(
+        (ing) => !selectedIngredients.some((sel) => isIngredientMatch(ing, sel))
+      );
+
+      // วัตถุดิบหลักที่ขาด (ตัดเครื่องปรุงติดครัวออก)
       const missingCoreIngredients = missingIngredients.filter(
-        ing => !OPTIONAL_PANTRY.some(p => ing.includes(p))
+        (ing) => !OPTIONAL_PANTRY.some((p) => ing.includes(p))
+      );
+
+      // วัตถุดิบหลักที่ตรง
+      const matchedCoreIngredients = matchedIngs.filter(
+        (ing) => !OPTIONAL_PANTRY.some((p) => ing.includes(p))
       );
 
       const totalIngs = recipeIngs.length;
-      const matchedCount = totalIngs - missingIngredients.length;
+      const matchedCount = matchedIngs.length;
       const matchPercentage = Math.round((matchedCount / totalIngs) * 100);
 
-      // คำแนะนำการทดแทนวัตถุดิบ
-      const missingSuggestions = missingIngredients.map(missing => {
-        const foundKey = Object.keys(substitutionDictionary).find(key => missing.includes(key));
-        if (foundKey) return `ขาด ${missing} ➜ ใช้: ${substitutionDictionary[foundKey]}`;
-        return null;
-      }).filter(Boolean) as string[];
+      // คำแนะนำทดแทนวัตถุดิบ
+      const missingSuggestions = missingIngredients
+        .map((missing) => {
+          const foundKey = Object.keys(substitutionDictionary).find((key) => missing.includes(key));
+          if (foundKey) return `ขาด ${missing} ➜ ใช้: ${substitutionDictionary[foundKey]}`;
+          return null;
+        })
+        .filter(Boolean) as string[];
 
       const healthSuggestions: string[] = [];
       if (isUserLoggedIn && userDiseases.length > 0) {
-        recipeIngs.forEach(ing => {
-          userDiseases.forEach(disease => {
+        recipeIngs.forEach((ing) => {
+          userDiseases.forEach((disease) => {
             const riskyKeywords = healthRules[disease] || [];
-            if (riskyKeywords.some(risk => ing.includes(risk))) {
-              const subKey = Object.keys(healthySubstitutes).find(k => ing.includes(k));
-              if (subKey && !healthSuggestions.some(s => s.includes(subKey))) {
-                healthSuggestions.push(`⚠️ เสี่ยง${disease} ➜ เลี่ยง ${subKey} เปลี่ยนไปใช้: ${healthySubstitutes[subKey]}`);
+            if (riskyKeywords.some((risk) => ing.includes(risk))) {
+              const subKey = Object.keys(healthySubstitutes).find((k) => ing.includes(k));
+              if (subKey && !healthSuggestions.some((s) => s.includes(subKey))) {
+                healthSuggestions.push(
+                  `⚠️ เสี่ยง${disease} ➜ เลี่ยง ${subKey} เปลี่ยนไปใช้: ${healthySubstitutes[subKey]}`
+                );
               }
             }
           });
@@ -343,27 +354,29 @@ export default function SearchIngredientsPage() {
 
       const recipeAnalysis: AnalyzedRecipe = {
         ...recipe,
-        missing: missingIngredients, // ส่งรายการที่ขาดจริงไปแสดงผลที่การ์ดเสมอ
+        missing: missingIngredients,
         missingCount: missingIngredients.length,
         matchPercentage,
-        suggestions: combinedSuggestions
+        suggestions: combinedSuggestions,
       };
 
-      // 1. หมวด "🎯 ทำได้เลย": วัตถุดิบหลักต้องครบ 100% (missingCoreIngredients ต้องเป็น 0)
-      if (missingCoreIngredients.length === 0 && matchedCount > 0) {
+      // 1. หมวดทำได้เลย: วัตถุดิบหลักครบถ้วน
+      if (missingCoreIngredients.length === 0 && (matchedCoreIngredients.length > 0 || matchedCount > 0)) {
         exactMatch.push({
           ...recipeAnalysis,
-          matchPercentage: Math.max(matchPercentage, 90)
+          matchPercentage: Math.max(matchPercentage, 90),
         });
-      }
-      // 2. หมวด "🛒 ซื้อเพิ่ม": ขาดรวมกันแค่ 1-2 อย่างเท่านั้น และต้องมีวัตถุดิบตรงกันอย่างน้อย 1 ชิ้น
-      else if (missingIngredients.length >= 1 && missingIngredients.length <= 2 && matchedCount > 0) {
+      } 
+      // 2. หมวดซื้อเพิ่ม: มีวัตถุดิบตรงกับสูตรอย่างน้อย 1 อย่าง แต่ยังขาดบางส่วน (ปลดล็อกให้แสดงผล)
+      else if (matchedCount > 0 && missingIngredients.length > 0) {
         partialMatch.push(recipeAnalysis);
       }
     });
 
-    // เรียงลำดับหมวดซื้อเพิ่ม: ขาดน้อยสุดขึ้นก่อน
-    partialMatch.sort((a, b) => a.missingCount - b.missingCount || b.matchPercentage - a.matchPercentage);
+    // เรียงลำดับเมนูที่พร้อมที่สุดขึ้นก่อน
+    partialMatch.sort(
+      (a, b) => b.matchPercentage - a.matchPercentage || a.missingCount - b.missingCount
+    );
 
     return { exactMatch, partialMatch };
   };
@@ -372,10 +385,11 @@ export default function SearchIngredientsPage() {
 
   const toggleIngredient = (ing: string) => {
     setSelectedIngredients(prev => {
-      if (prev.includes(ing)) return prev.filter(i => i !== ing);
+      const next = prev.includes(ing) ? prev.filter(i => i !== ing) : [...prev, ing];
       logActivity('fridge_select', `กดเลือกวัตถุดิบ: ${ing}`);
-      return [...prev, ing];
+      return next;
     });
+    setAiRecipe(null);
   };
 
   const renderRecipeCard = (recipe: AnalyzedRecipe | Recipe, isPartial = false) => {
@@ -476,78 +490,79 @@ export default function SearchIngredientsPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
       
+      {/* 🌟 หน้าต่าง Loading ของ AI */}
       {isAILoading && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-white px-10 py-8 rounded-3xl shadow-2xl flex flex-col items-center animate-fade-in-up">
-            <div className="w-16 h-16 border-4 border-gray-200 border-t-purple-500 rounded-full animate-spin mb-6"></div>
-            <h3 className="text-2xl font-bold text-gray-800 mb-2">AI กำลังวิเคราะห์...</h3>
-            <p className="text-gray-500 font-medium text-center">กำลังคิดค้นเมนูใหม่สุดพิเศษจากวัตถุดิบที่คุณเลือก</p>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white px-8 py-8 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm w-full text-center">
+            <div className="w-14 h-14 border-4 border-gray-200 border-t-purple-600 rounded-full animate-spin mb-4"></div>
+            <h3 className="text-xl font-extrabold text-gray-800 mb-1">AI กำลังวิเคราะห์สูตร...</h3>
+            <p className="text-xs text-gray-500 font-medium">กำลังจับคู่วัตถุดิบ พร้อมคัดกรองสารก่อภูมิแพ้และโรคประจำตัวของคุณ</p>
           </div>
         </div>
       )}
 
-      <main className="flex-grow w-full max-w-5xl mx-auto flex flex-col items-center pt-10 pb-24 px-4">
+      <main className="flex-grow w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-24 px-4">
         
         {/* Banner Login */}
         {!isUserLoggedIn && (
-          <div className="w-full max-w-5xl bg-blue-50 border border-blue-200 text-blue-700 px-6 py-3 rounded-2xl font-bold mb-6 text-sm shadow-sm flex items-center justify-between">
+          <div className="w-full max-w-5xl bg-blue-50 border border-blue-200 text-blue-700 px-4 sm:px-6 py-3 rounded-2xl font-bold mb-6 text-xs sm:text-sm shadow-sm flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-xl">🤖</span>
+              <span className="text-lg">🤖</span>
               <span>อยากให้ AI ช่วยวิเคราะห์การแพ้อาหารและโรคประจำตัวไหม?</span>
             </div>
-            <Link href="/login" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg transition-colors shadow-sm">
+            <Link href="/login" className="bg-blue-600 hover:bg-blue-700 text-white px-3 sm:px-4 py-1.5 rounded-lg transition-colors shadow-sm shrink-0">
               เข้าสู่ระบบ
             </Link>
           </div>
         )}
 
         {/* Dropzone ผสมวัตถุดิบ */}
-        <div className="w-full max-w-5xl bg-white/70 backdrop-blur-md border border-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-3xl p-6 mb-8">
-          <div className="flex flex-col md:flex-row gap-6 items-center">
-            <div className="flex-shrink-0 text-center md:text-left">
-              <h1 className="text-2xl md:text-3xl font-extrabold text-gray-800 mb-1">ผสมวัตถุดิบ</h1>
+        <div className="w-full max-w-5xl bg-white/70 backdrop-blur-md border border-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-3xl p-4 sm:p-6 mb-8">
+          <div className="flex flex-col md:flex-row gap-4 sm:gap-6 items-center">
+            <div className="shrink-0 text-center md:text-left">
+              <h1 className="text-xl sm:text-3xl font-extrabold text-gray-800 mb-1">ผสมวัตถุดิบ</h1>
             </div>
-            <div className="flex-grow w-full bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl p-4 flex flex-wrap gap-3 min-h-[60px] items-center">
+            <div className="flex-grow w-full bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl p-3 sm:p-4 flex flex-wrap gap-2 sm:gap-3 min-h-[60px] items-center">
               {selectedIngredients.length === 0 ? (
-                <span className="text-gray-400 font-medium w-full text-center">+ เลือกวัตถุดิบใส่หม้อด้านล่างเพื่อค้นหาสูตรจาก API</span>
+                <span className="text-gray-400 font-medium w-full text-center text-xs sm:text-sm">+ แตะเลือกวัตถุดิบด้านล่างเพื่อผสมสูตรอาหาร</span>
               ) : (
                 selectedIngredients.map((ing, idx) => (
-                  <button key={idx} onClick={() => toggleIngredient(ing)} className="bg-[#f26522] hover:bg-orange-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md transition-all">
+                  <button key={idx} onClick={() => toggleIngredient(ing)} className="bg-[#f26522] hover:bg-orange-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs sm:text-sm font-bold shadow-md transition-all">
                     {ing} ✕
                   </button>
                 ))
               )}
             </div>
             {selectedIngredients.length > 0 && (
-              <button onClick={() => setSelectedIngredients([])} className="bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold px-4 py-2 rounded-xl text-sm border border-gray-200 transition-colors flex-shrink-0">
-                ล้างวัตถุดิบ
+              <button onClick={() => { setSelectedIngredients([]); setAiRecipe(null); }} className="bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold px-4 py-2 rounded-xl text-xs sm:text-sm border border-gray-200 transition-colors shrink-0">
+                ล้างทั้งหมด
               </button>
             )}
           </div>
         </div>
 
         {/* Inventory คลังวัตถุดิบ */}
-        <div className="w-full max-w-5xl bg-white rounded-3xl shadow-sm border border-gray-100 p-6 mb-12 relative overflow-hidden">
+        <div className="w-full max-w-5xl bg-white rounded-3xl shadow-sm border border-gray-100 p-4 sm:p-6 mb-10 relative overflow-hidden">
           <div className="absolute top-0 right-0 bg-green-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl shadow-sm flex items-center gap-1">
             <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> Live DB
           </div>
-          <h2 className="text-xl font-extrabold text-gray-800 mb-6 border-l-4 border-[#f26522] pl-3">คลังวัตถุดิบ (Inventory)</h2>
-          <div className="flex flex-col gap-6 w-full">
+          <h2 className="text-lg sm:text-xl font-extrabold text-gray-800 mb-4 sm:mb-6 border-l-4 border-[#f26522] pl-3">คลังวัตถุดิบ (Inventory)</h2>
+          <div className="flex flex-col gap-5 sm:gap-6 w-full">
             {displayCategories.map((cat, idx) => (
               <div key={idx}>
-                <h3 className="text-sm font-bold text-gray-600 mb-3">{cat.title}</h3>
-                <div className="flex flex-wrap gap-2.5">
+                <h3 className="text-xs sm:text-sm font-bold text-gray-600 mb-2.5">{cat.title}</h3>
+                <div className="flex flex-wrap gap-2">
                   {cat.items.length > 0 ? (
                     cat.items.map((ing, i) => {
                       const isSelected = selectedIngredients.includes(ing);
                       return (
-                        <button key={i} onClick={() => toggleIngredient(ing)} className={`px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${isSelected ? 'bg-[#f26522] text-white border-[#f26522] shadow-md scale-105' : cat.color}`}>
+                        <button key={i} onClick={() => toggleIngredient(ing)} className={`px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold border transition-all ${isSelected ? 'bg-[#f26522] text-white border-[#f26522] shadow-md scale-105' : cat.color}`}>
                           {ing}
                         </button>
                       );
                     })
                   ) : (
-                    <span className="text-sm text-gray-400">ยังไม่มีวัตถุดิบในหมวดหมู่นี้</span>
+                    <span className="text-xs text-gray-400">ยังไม่มีวัตถุดิบในหมวดนี้</span>
                   )}
                 </div>
               </div>
@@ -555,56 +570,110 @@ export default function SearchIngredientsPage() {
           </div>
         </div>
 
-        {/* ผลลัพธ์การวิเคราะห์ */}
+        {/* 🌟 ผลลัพธ์การค้นหา */}
         {isLoading ? (
-          <div className="w-full py-16 text-center text-gray-500 font-bold">กำลังโหลดข้อมูลจาก API... ⏳</div>
+          <div className="w-full py-16 text-center text-gray-500 font-bold text-sm">กำลังโหลดข้อมูลจากฐานข้อมูล... ⏳</div>
         ) : selectedIngredients.length === 0 ? (
           <div className="w-full max-w-5xl">
-            <h2 className="text-2xl font-extrabold text-gray-800 mb-6 border-l-4 border-green-500 pl-3">
-              🔥 เมนูแนะนำทั้งหมดจาก API
+            <h2 className="text-xl sm:text-2xl font-extrabold text-gray-800 mb-6 border-l-4 border-green-500 pl-3">
+              🔥 เมนูแนะนำทั้งหมด
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {allRecipes.map(recipe => renderRecipeCard(recipe))}
             </div>
           </div>
         ) : (
-          <div className="w-full max-w-5xl space-y-12 animate-fade-in-up">
+          <div className="w-full max-w-5xl space-y-10">
             
-            {/* หมวด 1: วัตถุดิบครบ */}
+            {/* 🌟 การ์ด AI Recipe */}
+            {aiRecipe && (
+              <div className="bg-gradient-to-br from-purple-900 to-indigo-950 text-white rounded-[2rem] p-6 sm:p-8 shadow-xl relative overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="absolute -top-12 -right-12 w-48 h-48 bg-purple-500/20 rounded-full blur-3xl pointer-events-none"></div>
+                
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="bg-purple-500 text-white text-[11px] font-black px-3 py-1 rounded-full uppercase tracking-wider shadow-sm flex items-center gap-1">
+                    <span>✨</span> คิดค้นพิเศษโดย AI
+                  </span>
+                  <span className="text-xs text-purple-200 font-medium">ปลอดภัยต่อโรคประจำตัวและการแพ้อาหาร 100%</span>
+                </div>
+
+                <div className="flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
+                  <div>
+                    <h3 className="text-2xl sm:text-3xl font-extrabold mb-2 tracking-tight">{aiRecipe.name}</h3>
+                    <p className="text-xs sm:text-sm text-purple-200 max-w-xl leading-relaxed mb-4">
+                      สูตรอาหารสร้างสรรค์จากวัตถุดิบที่คุณเลือก ได้แก่: {selectedIngredients.join(", ")}
+                    </p>
+                    <div className="flex gap-3 text-xs font-bold">
+                      <span className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">🔥 {aiRecipe.kcal}</span>
+                      <span className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">⏱️ {aiRecipe.time}</span>
+                    </div>
+                  </div>
+
+                  {/* 🌟 ปุ่มนำทางไปหน้า /ai-recipe พร้อมส่งต่อข้อมูล */}
+                  <div className="flex flex-wrap sm:flex-nowrap gap-2.5 shrink-0 w-full md:w-auto">
+                    <button
+                      onClick={() => {
+                        sessionStorage.setItem("aiGeneratedRecipe", JSON.stringify({
+                          ...aiRecipe,
+                          steps: aiRecipe.instructions,
+                          calories: aiRecipe.kcal,
+                          sourceIngredients: selectedIngredients,
+                          sourcePage: "/search-ingredients"
+                        }));
+                        sessionStorage.setItem("aiRecipeSource", "/search-ingredients");
+                        sessionStorage.setItem("aiRecipeIngredients", JSON.stringify(selectedIngredients));
+                        router.push("/ai-recipe?from=/search-ingredients");
+                      }}
+                      className="flex-1 sm:flex-none bg-white text-purple-900 hover:bg-purple-50 active:scale-95 font-extrabold px-5 py-3 rounded-2xl shadow-lg transition-all text-xs sm:text-sm flex items-center justify-center gap-2"
+                    >
+                      📖 ดูสูตรและวิธีทำ
+                    </button>
+                    <button
+                      onClick={handleGenerateMenuWithAI}
+                      className="flex-1 sm:flex-none bg-purple-600/70 hover:bg-purple-600 border border-purple-400/30 text-white active:scale-95 font-extrabold px-4 py-3 rounded-2xl shadow-lg transition-all text-xs sm:text-sm flex items-center justify-center gap-1.5"
+                    >
+                      🔄 สุ่มเมนูอื่น
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* หมวด 1: วัตถุดิบหลักครบ */}
             <div>
-              <h2 className="text-2xl font-extrabold text-gray-800 mb-6 border-l-4 border-green-500 pl-3 flex items-center gap-2">
+              <h2 className="text-xl sm:text-2xl font-extrabold text-gray-800 mb-6 border-l-4 border-green-500 pl-3 flex items-center gap-2">
                 <span className="text-2xl">🎯</span> ทำได้เลย (วัตถุดิบหลักครบ)
               </h2>
               
               {exactMatch.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                   {exactMatch.map(recipe => renderRecipeCard(recipe, false))}
                 </div>
               ) : (
-                <div className="bg-red-50/80 p-8 md:p-12 rounded-[2rem] border-2 border-dashed border-red-200 text-center flex flex-col items-center justify-center gap-4 shadow-sm relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-400 to-orange-400"></div>
-                  <span className="text-5xl mb-2 drop-shadow-sm">🥲</span>
-                  <h3 className="text-2xl font-extrabold text-red-600">วัตถุดิบไม่เพียงพอสำหรับทำอาหาร</h3>
-                  <p className="text-red-500 text-sm md:text-base font-medium max-w-md">
+                <div className="bg-orange-50/70 p-6 sm:p-10 rounded-[2rem] border-2 border-dashed border-orange-200 text-center flex flex-col items-center justify-center gap-3 shadow-sm">
+                  <span className="text-4xl sm:text-5xl drop-shadow-sm">🥺</span>
+                  <h3 className="text-lg sm:text-xl font-extrabold text-red-600">วัตถุดิบไม่เพียงพอสำหรับทำอาหาร</h3>
+                  <p className="text-orange-600/90 text-xs sm:text-sm font-medium max-w-md mb-2">
                     ในฐานข้อมูลไม่มีเมนูไหนที่ใช้วัตถุดิบหลักตรงกับที่คุณมีเลยครับ ต้องหาซื้อของเพิ่มอีกนิดหน่อย
                   </p>
                   
-                  <div className="mt-4 flex flex-col sm:flex-row gap-4 w-full justify-center">
-                    <button onClick={handleGenerateMenuWithAI} className="bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white px-8 py-3.5 rounded-xl font-bold shadow-lg shadow-purple-200 transition-all hover:-translate-y-1 flex items-center justify-center gap-2">
-                      <span className="text-xl">✨</span> ให้ AI ช่วยคิดเมนูใหม่จากของที่มี
-                    </button>
-                  </div>
+                  <button 
+                    onClick={handleGenerateMenuWithAI} 
+                    className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white px-6 py-3 rounded-2xl font-bold shadow-lg shadow-purple-500/20 transition-all hover:scale-105 active:scale-95 flex items-center gap-2 text-xs sm:text-sm"
+                  >
+                    <span className="text-base">✨</span> ให้ AI ช่วยคิดเมนูใหม่จากของที่มี
+                  </button>
                 </div>
               )}
             </div>
 
-            {/* หมวด 2: ซื้อเพิ่ม */}
+            {/* หมวด 2: ซื้อเพิ่ม 1-2 อย่าง (แสดงผลเมนูที่ขาดพร้อมคำแนะนำ) */}
             {partialMatch.length > 0 && (
               <div>
-                <h2 className="text-2xl font-extrabold text-gray-800 mb-6 border-l-4 border-orange-400 pl-3 flex items-center gap-2">
-                  <span className="text-2xl">🛒</span> เมนูอื่นที่อาจทำได้ (หากซื้อวัตถุดิบเพิ่ม 1-2 อย่าง)
+                <h2 className="text-xl sm:text-2xl font-extrabold text-gray-800 mb-6 border-l-4 border-orange-400 pl-3 flex items-center gap-2">
+                  <span className="text-2xl">🛒</span> เมนูอื่นที่อาจทำได้ (ซื้อเพิ่มอีกนิดหน่อย)
                 </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                   {partialMatch.map(recipe => renderRecipeCard(recipe, true))}
                 </div>
               </div>
