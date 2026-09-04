@@ -5,6 +5,12 @@ import { useState, useEffect, Suspense } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 
+type SubstituteItem = {
+  original: string;
+  replace_with: string;
+  note?: string;
+};
+
 type RecipeData = {
   name: string;
   kcal?: string;
@@ -15,6 +21,7 @@ type RecipeData = {
   instructions?: string[];
   steps?: string[];
   description?: string;
+  substitutes?: SubstituteItem[]; // ➕ เพิ่มฟิลด์รองรับของทดแทน
   sourceIngredients?: string[];
   sourcePage?: string;
 };
@@ -37,7 +44,7 @@ function RecipeDetailContent() {
   const backUrl = isFromSearch ? "/search-ingredients" : "/fridge";
   const backLabel = isFromSearch ? "🥣 กลับไปหน้าผสมวัตถุดิบ" : "🧊 กลับไปตู้เย็น";
 
-  // 🌟 ปรับปรุง useEffect ให้ทำงานแบบ Asynchronous ป้องกัน ESLint set-state-in-effect
+  // 🌟 Asynchronous Data Loading ป้องกัน Hydration และ ESLint Warning
   useEffect(() => {
     const timer = setTimeout(() => {
       const rawData = sessionStorage.getItem("aiGeneratedRecipe");
@@ -125,6 +132,7 @@ function RecipeDetailContent() {
           ingredients: data.ingredients || ingredientsToUse,
           instructions: data.instructions || data.steps || ["ปรุงวัตถุดิบให้สุกตามลำดับ"],
           steps: data.instructions || data.steps || ["ปรุงวัตถุดิบให้สุกตามลำดับ"],
+          substitutes: data.substitutes || [], // ➕ บันทึกข้อมูลของทดแทนรอบสแกนใหม่
           sourceIngredients: ingredientsToUse,
           sourcePage: backUrl
         };
@@ -204,7 +212,7 @@ function RecipeDetailContent() {
         </div>
 
         {/* รายการวัตถุดิบ */}
-        <div className="mb-8">
+        <div className="mb-6">
           <h3 className="text-sm sm:text-base font-extrabold text-gray-800 mb-3 flex items-center gap-1.5">
             <span>🛒</span> วัตถุดิบที่ต้องใช้
           </h3>
@@ -217,6 +225,38 @@ function RecipeDetailContent() {
             ))}
           </div>
         </div>
+
+        {/* 🔄 กล่องแสดงวัตถุดิบทดแทนจาก AI */}
+        {recipe.substitutes && recipe.substitutes.length > 0 && (
+          <div className="mb-8 bg-orange-50/70 border border-orange-200/80 rounded-2xl p-4 sm:p-5">
+            <h3 className="text-sm sm:text-base font-extrabold text-[#f26522] mb-3 flex items-center gap-1.5">
+              <span>🔄</span> วัตถุดิบทดแทน (หากไม่มีของหลัก):
+            </h3>
+            <div className="space-y-2.5">
+              {recipe.substitutes.map((sub, idx) => (
+                <div
+                  key={idx}
+                  className="bg-white border border-orange-100 rounded-xl p-3 shadow-xs flex flex-col gap-1"
+                >
+                  <div className="flex items-center gap-2 flex-wrap text-xs sm:text-sm">
+                    <span className="font-semibold text-gray-500 line-through">
+                      {sub.original}
+                    </span>
+                    <span className="text-gray-400 font-bold">➔</span>
+                    <span className="font-bold text-[#f26522] bg-orange-50 px-2 py-0.5 rounded-lg border border-orange-200/50">
+                      {sub.replace_with}
+                    </span>
+                  </div>
+                  {sub.note && (
+                    <p className="text-[11px] text-gray-500 leading-tight">
+                      💡 {sub.note}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ขั้นตอนวิธีทำ */}
         <div className="mb-8">
