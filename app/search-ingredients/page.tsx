@@ -6,7 +6,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-// --- Types ---
 type Recipe = {
   id: number | string;
   name: string;
@@ -29,32 +28,11 @@ type ApiIngredient = {
   category?: string;
 };
 
-// --- ข้อมูลหมวดหมู่ตั้งต้น ---
 const initialCategories = [
-  {
-    id: "meat",
-    title: "🥩 เนื้อสัตว์ & โปรตีน",
-    color: "bg-red-50 text-red-600 border-red-200",
-    items: [] as string[]
-  },
-  {
-    id: "veg",
-    title: "🥬 ผัก & สมุนไพร",
-    color: "bg-green-50 text-green-700 border-green-200",
-    items: [] as string[]
-  },
-  {
-    id: "carb",
-    title: "🍜 ข้าว & เส้น",
-    color: "bg-yellow-50 text-yellow-700 border-yellow-200",
-    items: [] as string[]
-  },
-  {
-    id: "sauce",
-    title: "🧂 เครื่องปรุง & พริกแกง",
-    color: "bg-amber-50 text-amber-700 border-amber-200",
-    items: [] as string[]
-  }
+  { id: "meat", title: "🥩 เนื้อสัตว์ & โปรตีน", color: "bg-red-50 text-red-600 border-red-200", items: [] as string[] },
+  { id: "veg", title: "🥬 ผัก & สมุนไพร", color: "bg-green-50 text-green-700 border-green-200", items: [] as string[] },
+  { id: "carb", title: "🍜 ข้าว & เส้น", color: "bg-yellow-50 text-yellow-700 border-yellow-200", items: [] as string[] },
+  { id: "sauce", title: "🧂 เครื่องปรุง & พริกแกง", color: "bg-amber-50 text-amber-700 border-amber-200", items: [] as string[] }
 ];
 
 const OPTIONAL_PANTRY = [
@@ -145,13 +123,11 @@ export default function SearchIngredientsPage() {
   const [userDiseases, setUserDiseases] = useState<string[]>([]);
   const [userDiet, setUserDiet] = useState<string>("ทั่วไป");
   
-  // 🌟 AI States
   const [isAILoading, setIsAILoading] = useState(false);
   const [aiRecipe, setAiRecipe] = useState<Recipe | null>(null);
 
   const USER_EMAIL = "ko@cookcook.com";
 
-  // 🤖 ฟังก์ชันเรียก AI คิดสูตร
   const handleGenerateMenuWithAI = async () => {
     if (selectedIngredients.length === 0) return;
     setIsAILoading(true);
@@ -182,7 +158,6 @@ export default function SearchIngredientsPage() {
 
         setAiRecipe(recipePayload);
 
-        // 🌟 บันทึกข้อมูลและวัตถุดิบตั้งต้น เพื่อให้หน้ารูปที่ 3 สแกนซ้ำได้
         sessionStorage.setItem("aiGeneratedRecipe", JSON.stringify({
           ...recipePayload,
           steps: recipePayload.instructions,
@@ -289,7 +264,7 @@ export default function SearchIngredientsPage() {
     });
   }
 
-  // --- ฟังก์ชันวิเคราะห์สูตรอาหาร (ปรับปรุงระบบจับคู่ให้แสดงเมนูซื้อเพิ่ม) ---
+  // --- ปรับปรุงระบบวิเคราะห์สูตรอาหาร: เมนูที่ตรงกับของที่เลือกอย่างน้อย 1 อย่าง จะแสดงในหมวดซื้อเพิ่มทันที ---
   const analyzeRecipes = () => {
     if (selectedIngredients.length === 0) return { exactMatch: [], partialMatch: [] };
 
@@ -300,23 +275,15 @@ export default function SearchIngredientsPage() {
       const recipeIngs = recipe.ingredients || [];
       if (recipeIngs.length === 0) return;
 
-      // วัตถุดิบที่ตรงกัน
       const matchedIngs = recipeIngs.filter((ing) =>
         selectedIngredients.some((sel) => isIngredientMatch(ing, sel))
       );
 
-      // วัตถุดิบที่ยังขาด
       const missingIngredients = recipeIngs.filter(
         (ing) => !selectedIngredients.some((sel) => isIngredientMatch(ing, sel))
       );
 
-      // วัตถุดิบหลักที่ขาด (ตัดเครื่องปรุงติดครัวออก)
       const missingCoreIngredients = missingIngredients.filter(
-        (ing) => !OPTIONAL_PANTRY.some((p) => ing.includes(p))
-      );
-
-      // วัตถุดิบหลักที่ตรง
-      const matchedCoreIngredients = matchedIngs.filter(
         (ing) => !OPTIONAL_PANTRY.some((p) => ing.includes(p))
       );
 
@@ -324,7 +291,6 @@ export default function SearchIngredientsPage() {
       const matchedCount = matchedIngs.length;
       const matchPercentage = Math.round((matchedCount / totalIngs) * 100);
 
-      // คำแนะนำทดแทนวัตถุดิบ
       const missingSuggestions = missingIngredients
         .map((missing) => {
           const foundKey = Object.keys(substitutionDictionary).find((key) => missing.includes(key));
@@ -360,20 +326,16 @@ export default function SearchIngredientsPage() {
         suggestions: combinedSuggestions,
       };
 
-      // 1. หมวดทำได้เลย: วัตถุดิบหลักครบถ้วน
-      if (missingCoreIngredients.length === 0 && (matchedCoreIngredients.length > 0 || matchedCount > 0)) {
+      if (missingCoreIngredients.length === 0 && matchedCount > 0) {
         exactMatch.push({
           ...recipeAnalysis,
           matchPercentage: Math.max(matchPercentage, 90),
         });
-      } 
-      // 2. หมวดซื้อเพิ่ม: มีวัตถุดิบตรงกับสูตรอย่างน้อย 1 อย่าง แต่ยังขาดบางส่วน (ปลดล็อกให้แสดงผล)
-      else if (matchedCount > 0 && missingIngredients.length > 0) {
+      } else if (matchedCount > 0 && missingIngredients.length > 0) {
         partialMatch.push(recipeAnalysis);
       }
     });
 
-    // เรียงลำดับเมนูที่พร้อมที่สุดขึ้นก่อน
     partialMatch.sort(
       (a, b) => b.matchPercentage - a.matchPercentage || a.missingCount - b.missingCount
     );
@@ -490,7 +452,6 @@ export default function SearchIngredientsPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
       
-      {/* 🌟 หน้าต่าง Loading ของ AI */}
       {isAILoading && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-white px-8 py-8 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm w-full text-center">
@@ -503,7 +464,6 @@ export default function SearchIngredientsPage() {
 
       <main className="flex-grow w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-24 px-4">
         
-        {/* Banner Login */}
         {!isUserLoggedIn && (
           <div className="w-full max-w-5xl bg-blue-50 border border-blue-200 text-blue-700 px-4 sm:px-6 py-3 rounded-2xl font-bold mb-6 text-xs sm:text-sm shadow-sm flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -516,7 +476,6 @@ export default function SearchIngredientsPage() {
           </div>
         )}
 
-        {/* Dropzone ผสมวัตถุดิบ */}
         <div className="w-full max-w-5xl bg-white/70 backdrop-blur-md border border-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-3xl p-4 sm:p-6 mb-8">
           <div className="flex flex-col md:flex-row gap-4 sm:gap-6 items-center">
             <div className="shrink-0 text-center md:text-left">
@@ -541,7 +500,6 @@ export default function SearchIngredientsPage() {
           </div>
         </div>
 
-        {/* Inventory คลังวัตถุดิบ */}
         <div className="w-full max-w-5xl bg-white rounded-3xl shadow-sm border border-gray-100 p-4 sm:p-6 mb-10 relative overflow-hidden">
           <div className="absolute top-0 right-0 bg-green-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl shadow-sm flex items-center gap-1">
             <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> Live DB
@@ -570,7 +528,6 @@ export default function SearchIngredientsPage() {
           </div>
         </div>
 
-        {/* 🌟 ผลลัพธ์การค้นหา */}
         {isLoading ? (
           <div className="w-full py-16 text-center text-gray-500 font-bold text-sm">กำลังโหลดข้อมูลจากฐานข้อมูล... ⏳</div>
         ) : selectedIngredients.length === 0 ? (
@@ -585,7 +542,6 @@ export default function SearchIngredientsPage() {
         ) : (
           <div className="w-full max-w-5xl space-y-10">
             
-            {/* 🌟 การ์ด AI Recipe */}
             {aiRecipe && (
               <div className="bg-gradient-to-br from-purple-900 to-indigo-950 text-white rounded-[2rem] p-6 sm:p-8 shadow-xl relative overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
                 <div className="absolute -top-12 -right-12 w-48 h-48 bg-purple-500/20 rounded-full blur-3xl pointer-events-none"></div>
@@ -609,7 +565,6 @@ export default function SearchIngredientsPage() {
                     </div>
                   </div>
 
-                  {/* 🌟 ปุ่มนำทางไปหน้า /ai-recipe พร้อมส่งต่อข้อมูล */}
                   <div className="flex flex-wrap sm:flex-nowrap gap-2.5 shrink-0 w-full md:w-auto">
                     <button
                       onClick={() => {
@@ -639,7 +594,6 @@ export default function SearchIngredientsPage() {
               </div>
             )}
 
-            {/* หมวด 1: วัตถุดิบหลักครบ */}
             <div>
               <h2 className="text-xl sm:text-2xl font-extrabold text-gray-800 mb-6 border-l-4 border-green-500 pl-3 flex items-center gap-2">
                 <span className="text-2xl">🎯</span> ทำได้เลย (วัตถุดิบหลักครบ)
@@ -667,7 +621,7 @@ export default function SearchIngredientsPage() {
               )}
             </div>
 
-            {/* หมวด 2: ซื้อเพิ่ม 1-2 อย่าง (แสดงผลเมนูที่ขาดพร้อมคำแนะนำ) */}
+            {/* หมวด 2: ซื้อเพิ่มอีกนิดหน่อย */}
             {partialMatch.length > 0 && (
               <div>
                 <h2 className="text-xl sm:text-2xl font-extrabold text-gray-800 mb-6 border-l-4 border-orange-400 pl-3 flex items-center gap-2">
@@ -685,4 +639,4 @@ export default function SearchIngredientsPage() {
       </main>
     </div>
   );
-}
+} 
