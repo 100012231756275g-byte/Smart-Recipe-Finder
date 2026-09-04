@@ -1,8 +1,8 @@
-// app/reset-password/page.tsx
+// app/forgot-password/page.tsx
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -10,32 +10,23 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-export default function ResetPasswordPage() {
-  const router = useRouter();
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+export default function ForgotPasswordPage() {
+  const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  const handleUpdatePassword = async (e: React.FormEvent) => {
+  const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (newPassword.length < 6) {
-      setMessage({ type: "error", text: "รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร" });
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setMessage({ type: "error", text: "รหัสผ่านทั้งสองช่องไม่ตรงกัน" });
-      return;
-    }
+    if (!email) return;
 
     setIsLoading(true);
     setMessage(null);
 
     try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword,
+      const redirectUrl = `${window.location.origin}/reset-password`;
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: redirectUrl,
       });
 
       if (error) {
@@ -43,11 +34,8 @@ export default function ResetPasswordPage() {
       } else {
         setMessage({
           type: "success",
-          text: "เปลี่ยนรหัสผ่านสำเร็จเรียบร้อย! กำลังนำคุณไปหน้าเข้าสู่ระบบ..."
+          text: "ส่งลิงก์รีเซ็ตรหัสผ่านไปยังอีเมลของคุณเรียบร้อยแล้ว กรุณาตรวจสอบในกล่องจดหมาย (หรือกล่อง Junk/Spam)"
         });
-        setTimeout(() => {
-          router.push("/login");
-        }, 2000);
       }
     } catch (err) {
       console.error(err);
@@ -62,12 +50,12 @@ export default function ResetPasswordPage() {
       <div className="max-w-md w-full bg-white rounded-3xl shadow-sm border border-gray-100 p-6 sm:p-8">
         
         <div className="text-center mb-6">
-          <div className="w-12 h-12 bg-green-100 text-green-600 rounded-2xl flex items-center justify-center mx-auto mb-3 text-2xl font-bold">
-            🔒
+          <div className="w-12 h-12 bg-orange-100 text-[#f26522] rounded-2xl flex items-center justify-center mx-auto mb-3 text-2xl font-bold">
+            🔑
           </div>
-          <h1 className="text-2xl font-black text-gray-900">ตั้งรหัสผ่านใหม่</h1>
+          <h1 className="text-2xl font-black text-gray-900">ลืมรหัสผ่านใช่ไหม?</h1>
           <p className="text-xs sm:text-sm text-gray-500 mt-1">
-            กรุณากรอกรหัสผ่านใหม่ที่ต้องการใช้งาน
+            กรอกอีเมลที่คุณใช้สมัครสมาชิก เราจะส่งลิงก์สำหรับตั้งรหัสผ่านใหม่ไปให้
           </p>
         </div>
 
@@ -83,31 +71,17 @@ export default function ResetPasswordPage() {
           </div>
         )}
 
-        <form onSubmit={handleUpdatePassword} className="space-y-4">
+        <form onSubmit={handleResetPassword} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1.5">
-              รหัสผ่านใหม่ (อย่างน้อย 6 ตัวอักษร)
+              อีเมลของคุณ
             </label>
             <input
-              type="password"
+              type="email"
               required
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#f26522] transition-colors"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-gray-700 mb-1.5">
-              ยืนยันรหัสผ่านใหม่
-            </label>
-            <input
-              type="password"
-              required
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="••••••••"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="example@gmail.com"
               className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#f26522] transition-colors"
             />
           </div>
@@ -117,9 +91,18 @@ export default function ResetPasswordPage() {
             disabled={isLoading}
             className="w-full bg-[#f26522] hover:bg-orange-600 text-white font-extrabold py-3 rounded-xl text-sm shadow-md transition-all active:scale-95 disabled:opacity-50"
           >
-            {isLoading ? "กำลังบันทึก..." : "บันทึกรหัสผ่านใหม่"}
+            {isLoading ? "กำลังส่งลิงก์..." : "ส่งลิงก์รีเซ็ตรหัสผ่าน"}
           </button>
         </form>
+
+        <div className="text-center mt-6">
+          <Link
+            href="/login"
+            className="text-xs font-bold text-gray-500 hover:text-gray-800 transition-colors"
+          >
+            ← กลับไปหน้าเข้าสู่ระบบ
+          </Link>
+        </div>
 
       </div>
     </div>
