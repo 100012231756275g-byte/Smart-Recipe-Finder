@@ -18,7 +18,7 @@ const NCD_LIST = [
 export default function HealthProfilePage() {
   const [isMounted, setIsMounted] = useState(false);
 
-  // 🌟 State ข้อมูลสัดส่วนร่างกาย (เริ่มต้นเป็นค่าว่าง)
+  // 🌟 State ข้อมูลสัดส่วนร่างกาย
   const [gender, setGender] = useState<"male" | "female" | "">("");
   const [age, setAge] = useState("");
   const [weight, setWeight] = useState("");
@@ -35,24 +35,49 @@ export default function HealthProfilePage() {
   const [newAllergy, setNewAllergy] = useState("");
 
   useEffect(() => {
-    // 🌟 ดึงข้อมูลผ่าน setTimeout เพื่อแก้ปัญหา eslint(react-hooks/set-state-in-effect)
     const timer = setTimeout(() => {
-      const savedGender = localStorage.getItem("user_gender") as "male" | "female" | null;
-      const savedAge = localStorage.getItem("user_age");
-      const savedWeight = localStorage.getItem("user_weight");
-      const savedHeight = localStorage.getItem("user_height");
+      // 🌟 ดักอ่านคีย์ทุกรูปแบบจากหน้าอื่น (ทั้ง userAge, age, user_age ฯลฯ)
+      const rawGender =
+        localStorage.getItem("user_gender") ||
+        localStorage.getItem("userGender") ||
+        localStorage.getItem("gender");
 
-      if (savedGender) setGender(savedGender);
+      if (rawGender === "male" || rawGender === "ชาย") {
+        setGender("male");
+      } else if (rawGender === "female" || rawGender === "หญิง") {
+        setGender("female");
+      }
+
+      const savedAge =
+        localStorage.getItem("user_age") ||
+        localStorage.getItem("userAge") ||
+        localStorage.getItem("age");
       if (savedAge) setAge(savedAge);
+
+      const savedWeight =
+        localStorage.getItem("user_weight") ||
+        localStorage.getItem("userWeight") ||
+        localStorage.getItem("weight");
       if (savedWeight) setWeight(savedWeight);
+
+      const savedHeight =
+        localStorage.getItem("user_height") ||
+        localStorage.getItem("userHeight") ||
+        localStorage.getItem("height");
       if (savedHeight) setHeight(savedHeight);
 
-      const savedAllergies = localStorage.getItem("allergies");
+      const savedAllergies =
+        localStorage.getItem("allergies") ||
+        localStorage.getItem("user_allergies") ||
+        localStorage.getItem("userAllergies");
       if (savedAllergies) {
         setAllergies(savedAllergies.split(",").map((a) => a.trim()).filter(Boolean));
       }
 
-      const savedDiseases = localStorage.getItem("diseases");
+      const savedDiseases =
+        localStorage.getItem("diseases") ||
+        localStorage.getItem("user_diseases") ||
+        localStorage.getItem("userDiseases");
       if (savedDiseases) {
         setDiseases(savedDiseases.split(",").map((d) => d.trim()).filter(Boolean));
       }
@@ -116,23 +141,73 @@ export default function HealthProfilePage() {
   const handleSave = () => {
     setIsSaving(true);
     try {
-      if (gender) localStorage.setItem("user_gender", gender);
-      else localStorage.removeItem("user_gender");
+      // 🌟 บันทึกให้ครบทุกชื่อคีย์ ทั้งแบบ Snake Case และ Camel Case
+      if (gender) {
+        localStorage.setItem("user_gender", gender);
+        localStorage.setItem("userGender", gender);
+        localStorage.setItem("gender", gender);
+      } else {
+        localStorage.removeItem("user_gender");
+        localStorage.removeItem("userGender");
+        localStorage.removeItem("gender");
+      }
 
-      if (age) localStorage.setItem("user_age", age);
-      else localStorage.removeItem("user_age");
+      if (age) {
+        localStorage.setItem("user_age", age);
+        localStorage.setItem("userAge", age);
+        localStorage.setItem("age", age);
+      } else {
+        localStorage.removeItem("user_age");
+        localStorage.removeItem("userAge");
+        localStorage.removeItem("age");
+      }
 
-      if (weight) localStorage.setItem("user_weight", weight);
-      else localStorage.removeItem("user_weight");
+      if (weight) {
+        localStorage.setItem("user_weight", weight);
+        localStorage.setItem("userWeight", weight);
+        localStorage.setItem("weight", weight);
+      } else {
+        localStorage.removeItem("user_weight");
+        localStorage.removeItem("userWeight");
+        localStorage.removeItem("weight");
+      }
 
-      if (height) localStorage.setItem("user_height", height);
-      else localStorage.removeItem("user_height");
+      if (height) {
+        localStorage.setItem("user_height", height);
+        localStorage.setItem("userHeight", height);
+        localStorage.setItem("height", height);
+      } else {
+        localStorage.removeItem("user_height");
+        localStorage.removeItem("userHeight");
+        localStorage.removeItem("height");
+      }
 
-      if (allergies.length > 0) localStorage.setItem("allergies", allergies.join(","));
-      else localStorage.removeItem("allergies");
+      if (allergies.length > 0) {
+        const allergyStr = allergies.join(",");
+        localStorage.setItem("allergies", allergyStr);
+        localStorage.setItem("user_allergies", allergyStr);
+      } else {
+        localStorage.removeItem("allergies");
+        localStorage.removeItem("user_allergies");
+      }
 
-      if (diseases.length > 0) localStorage.setItem("diseases", diseases.join(","));
-      else localStorage.removeItem("diseases");
+      if (diseases.length > 0) {
+        const diseaseStr = diseases.join(",");
+        localStorage.setItem("diseases", diseaseStr);
+        localStorage.setItem("user_diseases", diseaseStr);
+      } else {
+        localStorage.removeItem("diseases");
+        localStorage.removeItem("user_diseases");
+      }
+
+      // 🌟 อัปเดตค่า BMI ไปยัง localStorage ให้หน้าอื่นใช้ได้ทันที
+      if (bmiInfo) {
+        localStorage.setItem("userBMI", bmiInfo.value.toString());
+        localStorage.setItem("userBMIStatus", bmiInfo.label);
+      }
+
+      // แจ้งเตือนการเปลี่ยนแปลงข้อมูลไปยังทุกหน้า
+      window.dispatchEvent(new Event("profileUpdated"));
 
       setIsEditing(false);
       alert("บันทึกข้อมูลสุขภาพและสัดส่วนร่างกายเรียบร้อยแล้ว! 💚");
@@ -170,7 +245,7 @@ export default function HealthProfilePage() {
             {!isEditing ? (
               <button
                 onClick={() => setIsEditing(true)}
-                className="bg-orange-50 text-[#f26522] px-4 py-2 rounded-full font-bold text-xs sm:text-sm hover:bg-orange-100 transition-colors flex items-center gap-1 border border-orange-100"
+                className="bg-orange-50 text-[#f26522] px-4 py-2 rounded-full font-bold text-xs sm:text-sm hover:bg-orange-100 transition-colors flex items-center gap-1 border border-orange-100 cursor-pointer"
               >
                 แก้ไข ✏️
               </button>
@@ -178,7 +253,7 @@ export default function HealthProfilePage() {
               <button
                 onClick={handleSave}
                 disabled={isSaving}
-                className="bg-[#f26522] text-white px-5 py-2 rounded-full font-bold text-xs sm:text-sm hover:bg-orange-600 transition-colors shadow-xs disabled:opacity-50"
+                className="bg-[#f26522] text-white px-5 py-2 rounded-full font-bold text-xs sm:text-sm hover:bg-orange-600 transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
               >
                 {isSaving ? "กำลังบันทึก..." : "บันทึก 💾"}
               </button>
@@ -252,7 +327,7 @@ export default function HealthProfilePage() {
                       <label className="block text-[11px] font-bold text-gray-500 mb-1">อายุ (ปี)</label>
                       <input
                         type="number"
-                        placeholder="เช่น 25"
+                        placeholder="เช่น 21"
                         value={age}
                         onChange={(e) => setAge(e.target.value)}
                         className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs sm:text-sm font-bold text-gray-800 outline-none focus:border-[#f26522]"
@@ -262,7 +337,7 @@ export default function HealthProfilePage() {
                       <label className="block text-[11px] font-bold text-gray-500 mb-1">น้ำหนัก (กก.)</label>
                       <input
                         type="number"
-                        placeholder="เช่น 65"
+                        placeholder="เช่น 82"
                         value={weight}
                         onChange={(e) => setWeight(e.target.value)}
                         className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs sm:text-sm font-bold text-gray-800 outline-none focus:border-[#f26522]"
@@ -272,7 +347,7 @@ export default function HealthProfilePage() {
                       <label className="block text-[11px] font-bold text-gray-500 mb-1">ส่วนสูง (ซม.)</label>
                       <input
                         type="number"
-                        placeholder="เช่น 170"
+                        placeholder="เช่น 180"
                         value={height}
                         onChange={(e) => setHeight(e.target.value)}
                         className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs sm:text-sm font-bold text-gray-800 outline-none focus:border-[#f26522]"
@@ -282,6 +357,7 @@ export default function HealthProfilePage() {
                 </div>
               )}
 
+              {/* แสดงผลกล่อง BMI เมื่อมีค่าน้ำหนักและส่วนสูง */}
               {bmiInfo && (
                 <div className={`mt-3 p-3.5 rounded-2xl border flex items-center justify-between transition-all ${bmiInfo.colorClass}`}>
                   <div>
@@ -312,7 +388,7 @@ export default function HealthProfilePage() {
                     {allergies.map((a) => (
                       <span key={a} className="bg-red-50 text-red-500 px-3 py-1 rounded-full text-xs font-bold border border-red-100 flex items-center gap-1.5">
                         {a}
-                        <button type="button" onClick={() => handleRemoveAllergy(a)} className="hover:text-red-700">
+                        <button type="button" onClick={() => handleRemoveAllergy(a)} className="hover:text-red-700 cursor-pointer">
                           ✕
                         </button>
                       </span>
@@ -335,7 +411,7 @@ export default function HealthProfilePage() {
                     <button
                       type="button"
                       onClick={handleAddAllergy}
-                      className="bg-gray-100 text-gray-700 px-4 py-2 rounded-xl font-bold text-xs hover:bg-gray-200 transition-colors"
+                      className="bg-gray-100 text-gray-700 px-4 py-2 rounded-xl font-bold text-xs hover:bg-gray-200 transition-colors cursor-pointer"
                     >
                       เพิ่ม
                     </button>
@@ -366,7 +442,7 @@ export default function HealthProfilePage() {
                     {diseases.map((d) => (
                       <span key={d} className="bg-orange-50 text-[#f26522] px-3 py-1 rounded-full text-xs font-bold border border-orange-100 flex items-center gap-1.5">
                         {d}
-                        <button type="button" onClick={() => handleRemoveDisease(d)} className="hover:text-orange-700">
+                        <button type="button" onClick={() => handleRemoveDisease(d)} className="hover:text-orange-700 cursor-pointer">
                           ✕
                         </button>
                       </span>
@@ -387,7 +463,7 @@ export default function HealthProfilePage() {
                     <button
                       type="button"
                       onClick={handleAddDisease}
-                      className="bg-orange-50 text-[#f26522] px-4 py-2 rounded-xl font-bold text-xs hover:bg-orange-100 border border-orange-200 transition-colors"
+                      className="bg-orange-50 text-[#f26522] px-4 py-2 rounded-xl font-bold text-xs hover:bg-orange-100 border border-orange-200 transition-colors cursor-pointer"
                     >
                       เพิ่ม
                     </button>
