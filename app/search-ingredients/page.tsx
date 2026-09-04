@@ -264,7 +264,6 @@ export default function SearchIngredientsPage() {
     });
   }
 
-  // --- ปรับปรุงระบบวิเคราะห์สูตรอาหาร: เมนูที่ตรงกับของที่เลือกอย่างน้อย 1 อย่าง จะแสดงในหมวดซื้อเพิ่มทันที ---
   const analyzeRecipes = () => {
     if (selectedIngredients.length === 0) return { exactMatch: [], partialMatch: [] };
 
@@ -542,6 +541,7 @@ export default function SearchIngredientsPage() {
         ) : (
           <div className="w-full max-w-5xl space-y-10">
             
+            {/* 🌟 การ์ด AI Recipe */}
             {aiRecipe && (
               <div className="bg-gradient-to-br from-purple-900 to-indigo-950 text-white rounded-[2rem] p-6 sm:p-8 shadow-xl relative overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
                 <div className="absolute -top-12 -right-12 w-48 h-48 bg-purple-500/20 rounded-full blur-3xl pointer-events-none"></div>
@@ -550,7 +550,15 @@ export default function SearchIngredientsPage() {
                   <span className="bg-purple-500 text-white text-[11px] font-black px-3 py-1 rounded-full uppercase tracking-wider shadow-sm flex items-center gap-1">
                     <span>✨</span> คิดค้นพิเศษโดย AI
                   </span>
-                  <span className="text-xs text-purple-200 font-medium">ปลอดภัยต่อโรคประจำตัวและการแพ้อาหาร 100%</span>
+                  {isUserLoggedIn && (userDiseases.length > 0 || userAllergies.length > 0) ? (
+                    <span className="text-xs text-purple-200 font-medium">
+                      ปลอดภัยต่อโรคประจำตัวและการแพ้อาหาร 100%
+                    </span>
+                  ) : (
+                    <span className="text-xs text-purple-200 font-medium">
+                      คำนวณโภชนาการและสัดส่วนวัตถุดิบอย่างลงตัว
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
@@ -594,32 +602,35 @@ export default function SearchIngredientsPage() {
               </div>
             )}
 
-            <div>
-              <h2 className="text-xl sm:text-2xl font-extrabold text-gray-800 mb-6 border-l-4 border-green-500 pl-3 flex items-center gap-2">
-                <span className="text-2xl">🎯</span> ทำได้เลย (วัตถุดิบหลักครบ)
-              </h2>
-              
-              {exactMatch.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                  {exactMatch.map(recipe => renderRecipeCard(recipe, false))}
-                </div>
-              ) : (
-                <div className="bg-orange-50/70 p-6 sm:p-10 rounded-[2rem] border-2 border-dashed border-orange-200 text-center flex flex-col items-center justify-center gap-3 shadow-sm">
-                  <span className="text-4xl sm:text-5xl drop-shadow-sm">🥺</span>
-                  <h3 className="text-lg sm:text-xl font-extrabold text-red-600">วัตถุดิบไม่เพียงพอสำหรับทำอาหาร</h3>
-                  <p className="text-orange-600/90 text-xs sm:text-sm font-medium max-w-md mb-2">
-                    ในฐานข้อมูลไม่มีเมนูไหนที่ใช้วัตถุดิบหลักตรงกับที่คุณมีเลยครับ ต้องหาซื้อของเพิ่มอีกนิดหน่อย
-                  </p>
-                  
-                  <button 
-                    onClick={handleGenerateMenuWithAI} 
-                    className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white px-6 py-3 rounded-2xl font-bold shadow-lg shadow-purple-500/20 transition-all hover:scale-105 active:scale-95 flex items-center gap-2 text-xs sm:text-sm"
-                  >
-                    <span className="text-base">✨</span> ให้ AI ช่วยคิดเมนูใหม่จากของที่มี
-                  </button>
-                </div>
-              )}
-            </div>
+            {/* 🌟 หมวด 1: ทำได้เลย (ถ้า AI เจนสูตรแล้ว และใน DB ไม่มีเมนูที่ครบ จะซ่อนกล่องสีส้มนี้ทิ้งทันที) */}
+            {(exactMatch.length > 0 || !aiRecipe) && (
+              <div>
+                <h2 className="text-xl sm:text-2xl font-extrabold text-gray-800 mb-6 border-l-4 border-green-500 pl-3 flex items-center gap-2">
+                  <span className="text-2xl">🎯</span> ทำได้เลย (วัตถุดิบหลักครบ)
+                </h2>
+                
+                {exactMatch.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                    {exactMatch.map(recipe => renderRecipeCard(recipe, false))}
+                  </div>
+                ) : (
+                  <div className="bg-orange-50/70 p-6 sm:p-10 rounded-[2rem] border-2 border-dashed border-orange-200 text-center flex flex-col items-center justify-center gap-3 shadow-sm">
+                    <span className="text-4xl sm:text-5xl drop-shadow-sm">🥺</span>
+                    <h3 className="text-lg sm:text-xl font-extrabold text-red-600">วัตถุดิบไม่เพียงพอสำหรับทำอาหาร</h3>
+                    <p className="text-orange-600/90 text-xs sm:text-sm font-medium max-w-md mb-2">
+                      ในฐานข้อมูลไม่มีเมนูไหนที่ใช้วัตถุดิบหลักตรงกับที่คุณมีเลยครับ ต้องหาซื้อของเพิ่มอีกนิดหน่อย
+                    </p>
+                    
+                    <button 
+                      onClick={handleGenerateMenuWithAI} 
+                      className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white px-6 py-3 rounded-2xl font-bold shadow-lg shadow-purple-500/20 transition-all hover:scale-105 active:scale-95 flex items-center gap-2 text-xs sm:text-sm"
+                    >
+                      <span className="text-base">✨</span> ให้ AI ช่วยคิดเมนูใหม่จากของที่มี
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* หมวด 2: ซื้อเพิ่มอีกนิดหน่อย */}
             {partialMatch.length > 0 && (
@@ -639,4 +650,4 @@ export default function SearchIngredientsPage() {
       </main>
     </div>
   );
-} 
+}
