@@ -1,8 +1,15 @@
+// app/reset-password/page.tsx
 "use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -11,7 +18,7 @@ export default function ResetPasswordPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleResetPassword = (e: React.FormEvent) => {
+  const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage("");
 
@@ -27,24 +34,36 @@ export default function ResetPasswordPage() {
 
     setIsSaving(true);
 
-    setTimeout(() => {
+    try {
+      // 🔒 อัปเดตรหัสผ่านใหม่ผ่านระบบความปลอดภัยของ Supabase Auth
+      const { error } = await supabase.auth.updateUser({
+        password: password,
+      });
+
+      if (error) {
+        setErrorMessage(error.message || "ไม่สามารถเปลี่ยนรหัสผ่านได้ กรุณาลองใหม่อีกครั้ง");
+      } else {
+        alert("✅ เปลี่ยนรหัสผ่านสำเร็จ! กรุณาเข้าสู่ระบบด้วยรหัสผ่านใหม่");
+        router.push("/login");
+      }
+    } catch (err) {
+      console.error(err);
+      setErrorMessage("เกิดข้อผิดพลาดในการเชื่อมต่อระบบ กรุณาลองใหม่อีกครั้ง");
+    } finally {
       setIsSaving(false);
-      alert("✅ เปลี่ยนรหัสผ่านสำเร็จ! กรุณาเข้าสู่ระบบด้วยรหัสผ่านใหม่");
-      router.push("/login");
-    }, 1500);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 relative">
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 relative font-sans">
       <div className="bg-white w-full max-w-lg rounded-[2rem] shadow-xl relative px-8 py-14 md:px-16 text-center animate-fade-in-up">
         
-        {/* 🌟 ปุ่มย้อนกลับ (แบบวงกลมมีไอคอนลูกศร สวยและชัดเจน) 🌟 */}
+        {/* 🌟 ปุ่มย้อนกลับแบบเดิม 🌟 */}
         <button 
           onClick={() => router.back()}
           className="absolute top-6 left-6 w-10 h-10 flex items-center justify-center bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 rounded-full transition-all shadow-sm"
           title="ย้อนกลับ"
         >
-          {/* ไอคอนลูกศร (SVG) */}
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5 -ml-1">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
           </svg>

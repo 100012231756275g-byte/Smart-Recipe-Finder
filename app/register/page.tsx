@@ -1,239 +1,208 @@
-// app/forgot-password/page.tsx
+// app/register/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { auth } from "@/lib/firebase";
-import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from "firebase/auth";
+import { createClient } from "@supabase/supabase-js";
 
-declare global {
-  interface Window {
-    recaptchaVerifier?: RecaptchaVerifier;
-    confirmationResult?: ConfirmationResult;
-  }
-}
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
-export default function ForgotPasswordPage() {
+export default function RegisterPage() {
   const router = useRouter();
-  
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
+
+  // ข้อมูลบัญชีผู้ใช้
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  // ข้อมูลโปรไฟล์และสุขภาพ
+  const [age, setAge] = useState("");
+  const [healthIssues, setHealthIssues] = useState("");
+
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  const [showOTPModal, setShowOTPModal] = useState(false);
-  const [otp, setOtp] = useState("");
-  const [otpError, setOtpError] = useState("");
-  const [isVerifying, setIsVerifying] = useState(false);
-
-  // ตั้งค่า reCAPTCHA
-  useEffect(() => {
-    if (typeof window !== "undefined" && !window.recaptchaVerifier) {
-      try {
-        window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
-          size: "invisible",
-          callback: () => {},
-          "expired-callback": () => {
-            setErrorMessage("reCAPTCHA หมดอายุ กรุณากดส่งใหม่อีกครั้ง");
-          }
-        });
-      } catch (err) {
-        console.error("Recaptcha Init Error:", err);
-      }
-    }
-  }, []);
-
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/\D/g, "");
-    if (value.length <= 10) {
-      setPhoneNumber(value);
-    }
-  };
-
-  // ส่ง SMS เข้าโทรศัพท์จริง
-  const handleSendOTP = async (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage("");
 
-    if (phoneNumber.length !== 10) {
-      setErrorMessage("กรุณากรอกเบอร์โทรศัพท์ให้ครบ 10 หลัก");
+    if (password.length < 6) {
+      setErrorMessage("รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setErrorMessage("รหัสผ่านทั้งสองช่องไม่ตรงกัน");
       return;
     }
 
     setIsLoading(true);
-    setErrorMessage("");
 
     try {
-      const formattedPhone = "+66" + phoneNumber.substring(1);
-      
-      if (!window.recaptchaVerifier) {
-        window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
-          size: "invisible"
-        });
+      // 1. สร้างบัญชีผู้ใช้หลักใน auth.users ของ Supabase ด้วย Email
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password: password,
+      });
+
+      if (authError) {
+        setErrorMessage(authError.message);
+        setIsLoading(false);
+        return;
       }
 
-      const confirmationResult = await signInWithPhoneNumber(
-        auth, 
-        formattedPhone, 
-        window.recaptchaVerifier
-      );
-      
-      window.confirmationResult = confirmationResult;
-      setShowOTPModal(true);
-    } catch (error: unknown) {
-      console.error("Firebase SMS Error:", error);
-      const err = error as { code?: string; message?: string };
-      
-      if (err.code === "auth/invalid-phone-number") {
-        setErrorMessage("รูปแบบเบอร์โทรศัพท์ไม่ถูกต้อง");
-      } else if (err.code === "auth/too-many-requests") {
-        setErrorMessage("ส่ง SMS บ่อยเกินไป กรุณารอสักครู่");
-      } else if (err.code === "auth/quota-exceeded") {
-        setErrorMessage("โควตาส่ง SMS ฟรีของ Firebase เต็มสำหรับวันนี้");
-      } else {
-        setErrorMessage(`ส่ง SMS ไม่สำเร็จ (${err.code || "unknown error"})`);
+      const user = authData?.user;
+      if (!user) {
+        setErrorMessage("สร้างบัญชีไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+        setIsLoading(false);
+        return;
       }
+
+      // 2. บันทึกข้อมูลสุขภาพลงตาราง public.profiles โดยใช้ id (UUID) เดียวกัน
+      const { error: profileError } = await supabase.from("profiles").insert([
+        {
+          id: user.id,
+          full_name: fullName.trim(),
+          role: "User",
+          age: age ? parseInt(age) : null,
+          health_issues: healthIssues.trim() || null,
+          status: "Active",
+        },
+      ]);
+
+      if (profileError) {
+        console.error("Profile creation error:", profileError);
+      }
+
+      alert("✅ สมัครสมาชิกสำเร็จเรียบร้อย! กรุณาเข้าสู่ระบบ");
+      router.push("/login");
+    } catch (err) {
+      console.error("Register Error:", err);
+      setErrorMessage("เกิดข้อผิดพลาดในการเชื่อมต่อระบบ กรุณาลองใหม่");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // ยืนยันรหัส OTP จริงจาก SMS
-  const handleVerifyOTP = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsVerifying(true);
-    setOtpError("");
-
-    try {
-      if (!window.confirmationResult) {
-        throw new Error("ไม่พบเซสชัน OTP กรุณากดส่งรหัสใหม่อีกครั้ง");
-      }
-
-      await window.confirmationResult.confirm(otp.trim());
-
-      setShowOTPModal(false);
-      sessionStorage.setItem("reset_password_phone", phoneNumber.trim());
-      router.push("/reset-password");
-    } catch (error) {
-      console.error("Verify OTP Error:", error);
-      setOtpError("รหัส OTP จาก SMS ไม่ถูกต้องหรือหมดอายุ");
-    } finally {
-      setIsVerifying(false);
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 relative font-sans">
-      
-      {/* Container สำหรับ Google reCAPTCHA */}
-      <div id="recaptcha-container"></div>
-
-      <div className="bg-white w-full max-w-lg rounded-[2rem] shadow-xl relative px-8 py-14 md:px-16 text-center z-10 animate-fade-in-up">
-        <button 
-          onClick={() => router.push("/")}
-          className="absolute top-6 right-6 bg-[#EF4444] hover:bg-red-600 text-white text-base font-medium py-2 px-6 rounded-[1rem] shadow-sm transition-transform hover:scale-105"
-        >
-          ปิด
-        </button>
-
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold text-black tracking-wide mb-3">ลืมรหัสผ่าน?</h2>
-          <p className="text-gray-600 text-sm md:text-base">
-            กรุณากรอกเบอร์โทรศัพท์ของคุณเพื่อรับรหัสยืนยัน OTP ผ่าน SMS จริง
-          </p>
+    <div className="min-h-screen bg-[#fcf9f6] flex items-center justify-center p-4 font-sans">
+      <div className="bg-white w-full max-w-lg rounded-[2rem] shadow-sm border border-gray-100 p-6 sm:p-10 text-center">
+        
+        <div className="w-16 h-16 bg-orange-100 text-[#f26522] rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4 font-bold">
+          🥗
         </div>
 
-        <form onSubmit={handleSendOTP} className="flex flex-col gap-5">
+        <h1 className="text-2xl sm:text-3xl font-black text-gray-900 mb-2">สมัครสมาชิกใหม่</h1>
+        <p className="text-xs sm:text-sm text-gray-500 mb-6">
+          สร้างบัญชีเพื่อรับสูตรอาหารที่ปลอดภัยและเหมาะกับสุขภาพของคุณ
+        </p>
+
+        {errorMessage && (
+          <div className="bg-red-50 text-red-600 border border-red-200 text-xs sm:text-sm p-3.5 rounded-xl font-bold mb-4">
+            {errorMessage}
+          </div>
+        )}
+
+        <form onSubmit={handleRegister} className="space-y-4 text-left">
+          
+          {/* ชื่อ-นามสกุล / ชื่อเล่น */}
           <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">ชื่อของคุณ</label>
             <input
-              type="tel"
-              autoComplete="off"
-              placeholder="เบอร์โทรศัพท์ (10 หลัก)"
-              value={phoneNumber}
-              onChange={handlePhoneChange}
-              className="w-full bg-[#E5E7EB] text-center text-gray-800 placeholder-gray-500 rounded-full px-6 py-4 focus:outline-none focus:ring-2 focus:ring-[#f26522] text-lg font-medium tracking-widest"
+              type="text"
               required
-              disabled={isLoading}
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="เช่น สมชาย ใจดี"
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#f26522] transition-colors"
             />
           </div>
 
-          <div className="min-h-[20px]">
-            {errorMessage && (
-              <p className="text-red-500 text-sm font-medium animate-pulse">{errorMessage}</p>
-            )}
+          {/* อีเมล (สำคัญที่สุด: จะส่งไปเก็บใน auth.users) */}
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">อีเมล (Email)</label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="example@gmail.com"
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#f26522] transition-colors"
+            />
           </div>
 
-          <button 
+          {/* รหัสผ่าน 2 ช่อง */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">รหัสผ่าน (6+ ตัวอักษร)</label>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#f26522] transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">ยืนยันรหัสผ่าน</label>
+              <input
+                type="password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#f26522] transition-colors"
+              />
+            </div>
+          </div>
+
+          {/* ข้อมูลสุขภาพเสริมสำหรับ Profiles */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">อายุ (ปี)</label>
+              <input
+                type="number"
+                value={age}
+                onChange={(e) => setAge(e.target.value)}
+                placeholder="เช่น 25"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#f26522] transition-colors"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold text-gray-700 mb-1">โรคประจำตัว / อาหารที่แพ้</label>
+              <input
+                type="text"
+                value={healthIssues}
+                onChange={(e) => setHealthIssues(e.target.value)}
+                placeholder="เช่น เบาหวาน, แพ้กุ้ง"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#f26522] transition-colors"
+              />
+            </div>
+          </div>
+
+          <button
             type="submit"
-            disabled={isLoading || phoneNumber.length < 10}
-            className={`w-full text-white text-lg font-bold rounded-full py-4 transition-all shadow-md flex items-center justify-center gap-2
-              ${isLoading || phoneNumber.length < 10 ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#f26522] hover:bg-orange-600 hover:scale-[1.02]'}`}
+            disabled={isLoading}
+            className="w-full mt-4 bg-[#f26522] hover:bg-orange-600 text-white font-extrabold py-3.5 rounded-xl text-sm shadow-md transition-all active:scale-95 disabled:opacity-50"
           >
-            {isLoading ? (
-              <><span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span> กำลังส่ง SMS จริง...</>
-            ) : "ส่งรหัส OTP"}
+            {isLoading ? "กำลังลงทะเบียน..." : "สมัครสมาชิก"}
           </button>
         </form>
 
-        <div className="mt-8">
-          <Link href="/login" className="text-gray-500 hover:text-gray-800 font-medium transition-colors inline-flex items-center gap-1">
-            <span>&larr;</span> กลับไปหน้าเข้าสู่ระบบ
+        <div className="text-center mt-6 pt-4 border-t border-gray-100">
+          <span className="text-xs text-gray-500">มีบัญชีผู้ใช้อยู่แล้ว? </span>
+          <Link href="/login" className="text-xs font-bold text-[#f26522] hover:underline">
+            เข้าสู่ระบบที่นี่
           </Link>
         </div>
+
       </div>
-
-      {/* Pop-up กรอก OTP */}
-      {showOTPModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl animate-fade-in-up">
-            <div className="w-16 h-16 bg-orange-100 text-[#f26522] rounded-full flex items-center justify-center text-3xl mx-auto mb-4">
-              💬
-            </div>
-            
-            <h3 className="text-2xl font-bold text-gray-800 mb-2">กรอกรหัส OTP</h3>
-            <p className="text-gray-500 text-sm mb-6">
-              ส่งข้อความ SMS ไปยังเบอร์<br/>
-              <span className="font-bold text-[#f26522]">{phoneNumber}</span> เรียบร้อยแล้ว
-            </p>
-
-            <form onSubmit={handleVerifyOTP} className="flex flex-col gap-4">
-              <input
-                type="text"
-                maxLength={6}
-                autoComplete="off"
-                placeholder="• • • • • •"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                className="w-full bg-gray-50 border border-gray-200 text-center text-2xl tracking-[0.5em] text-gray-800 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#f26522]"
-                required
-                autoFocus
-              />
-
-              {otpError && <p className="text-red-500 text-xs font-bold">{otpError}</p>}
-
-              <button
-                type="submit"
-                disabled={isVerifying || otp.length < 6}
-                className={`w-full text-white text-lg font-bold rounded-xl py-3 transition-all ${isVerifying || otp.length < 6 ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#f26522] hover:bg-orange-600 shadow-md hover:shadow-lg'}`}
-              >
-                {isVerifying ? "กำลังตรวจสอบ..." : "ยืนยัน OTP"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowOTPModal(false);
-                  setOtp("");
-                  setOtpError("");
-                }}
-                className="mt-2 text-gray-500 font-bold text-sm hover:text-gray-800 transition-colors"
-              >
-                ยกเลิก / แก้ไขเบอร์โทร
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
