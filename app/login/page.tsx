@@ -29,12 +29,13 @@ export default function LoginPage() {
   const [countdown, setCountdown] = useState(0);
 
   useEffect(() => {
-    // 🌟 อัปเกรด: เปลี่ยนเป็น sessionStorage
     const loggedIn = sessionStorage.getItem("isLoggedIn");
-    if (loggedIn === "true") { router.replace("/"); return; }
+    if (loggedIn === "true") { 
+      router.replace("/"); 
+      return; 
+    }
 
     setTimeout(() => {
-      // พวกประวัติการเดารหัสผิด ปล่อยเป็น localStorage ไว้เหมือนเดิมได้ครับ เพื่อกันคนรีเฟรชหน้าหนีหนี้
       const storedAttempts = parseInt(localStorage.getItem("failed_attempts") || "0");
       const storedLockoutTime = parseInt(localStorage.getItem("lockout_time") || "0");
       if (storedAttempts > 0) setFailedAttempts(storedAttempts);
@@ -85,6 +86,7 @@ export default function LoginPage() {
     }
   };
 
+  // ตรวจสอบข้อมูลสำหรับการ Login (รองรับทั้งเบอร์และอีเมล)
   const getAuthCredentials = (inputStr: string, pass: string) => {
     const trimmed = inputStr.trim();
     const isPhone = /^[0-9]+$/.test(trimmed);
@@ -112,16 +114,12 @@ export default function LoginPage() {
       const secretPin = window.prompt("🚨 ยืนยันตัวตนระดับ Admin: กรุณากรอกรหัส PIN ลับ 6 หลัก");
       if (secretPin === "999999") { 
         resetSecurity();
-        
-        // 🌟 อัปเกรด: Admin ก็เปลี่ยนมาใช้ sessionStorage ด้วย (เผื่อปิดหน้าต่างแล้วอยากให้เด้งออกเลย)
-        // หรือถ้าอยากให้ Admin จำค่าถาวร ก็แก้กลับเป็น localStorage ได้นะครับ (แต่เอาแบบนี้ไปก่อน ปลอดภัยดี)
         sessionStorage.setItem("isLoggedIn", "true");
-        localStorage.setItem("isAdmin", "true"); // ตัว Admin ยังเก็บเป็น local ได้ ไม่เป็นไร
+        localStorage.setItem("isAdmin", "true");
         document.cookie = "isAdmin=true; path=/;";
         sessionStorage.setItem("mockUser", JSON.stringify({ name: "Super Admin", contact: "admin" }));
         
         window.dispatchEvent(new Event("profileUpdated"));
-        
         alert("✅ ยืนยันตัวตนสำเร็จ! ยินดีต้อนรับผู้ดูแลระบบ");
         router.push("/admin");
       } else {
@@ -140,15 +138,16 @@ export default function LoginPage() {
       if (error) throw error;
 
       resetSecurity(); 
-      // 🌟 อัปเกรด: เปลี่ยนมาเซฟค่าลง sessionStorage ทั้งหมด!
       sessionStorage.setItem("isLoggedIn", "true");
       localStorage.removeItem("isAdmin");
       
       const userName = data.user?.user_metadata?.full_name || "สมาชิก";
       sessionStorage.setItem("mockUser", JSON.stringify({ name: userName, contact: contact }));
+      if (data.user?.email) {
+        sessionStorage.setItem("userEmail", data.user.email);
+      }
 
       window.dispatchEvent(new Event("profileUpdated"));
-
       alert(`🎉 เข้าสู่ระบบสำเร็จ ยินดีต้อนรับคุณ ${userName}!`);
       router.push("/");
 
@@ -165,20 +164,30 @@ export default function LoginPage() {
     setIsLoading(true);
     setErrorMessage("");
 
-    try {
-      const authData = getAuthCredentials(contact, password);
+    const emailTrimmed = contact.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-      // 1. สร้าง User ในระบบ Auth หลักของ Supabase
+    // 🔒 บังคับตรวจสอบความถูกต้องของอีเมล
+    if (!emailRegex.test(emailTrimmed)) {
+      setErrorMessage("กรุณากรอกอีเมลที่ถูกต้องสำหรับการสมัครสมาชิก (เช่น yourname@gmail.com)");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // 1. บันทึกบัญชีด้วย Email ลง auth.users ของ Supabase
       const { data: authDataRes, error } = await supabase.auth.signUp({
-        ...authData,
+        email: emailTrimmed,
+        password: password,
         options: {
-          data: { full_name: name, original_contact: contact }
+          data: { full_name: name }
         }
       });
 
       if (error) throw error;
 
       if (authDataRes.user) {
+        // 2. สร้างข้อมูลในตาราง profiles
         const { error: profileError } = await supabase
           .from("profiles")
           .insert([
@@ -191,23 +200,23 @@ export default function LoginPage() {
           ]);
         
         if (profileError) {
-          console.error("สร้าง Profile ลงฐานข้อมูลหน้าบ้านไม่สำเร็จ:", profileError);
+          console.error("สร้าง Profile ไม่สำเร็จ:", profileError);
         }
       }
 
       alert(`✨ สมัครสมาชิกสำเร็จ! ยินดีต้อนรับคุณ ${name}`);
 
-      // 🧹 สั่งล้างข้อมูลสุขภาพของคนเก่าทิ้งให้หมด!
+      // ล้างค่าเก่า
       localStorage.removeItem("userAge");
       localStorage.removeItem("userBMI");
       localStorage.removeItem("userBMIStatus");
       localStorage.removeItem("userTDEE");
       localStorage.removeItem("userBMR");
 
-      // 🌟 อัปเกรด: เปลี่ยนมาเซฟค่าลง sessionStorage
       sessionStorage.setItem("isLoggedIn", "true");
+      sessionStorage.setItem("userEmail", emailTrimmed);
       localStorage.removeItem("isAdmin");
-      sessionStorage.setItem("mockUser", JSON.stringify({ name: name, contact: contact }));
+      sessionStorage.setItem("mockUser", JSON.stringify({ name: name, contact: emailTrimmed }));
 
       window.dispatchEvent(new Event("profileUpdated"));
       router.push("/");
@@ -215,7 +224,7 @@ export default function LoginPage() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "ไม่สามารถสมัครสมาชิกได้";
       if (msg.includes("already registered")) {
-        setErrorMessage("บัญชีนี้ถูกสมัครไปแล้ว กรุณาเข้าสู่ระบบ");
+        setErrorMessage("อีเมลนี้ถูกสมัครไปแล้ว กรุณาเข้าสู่ระบบ");
       } else {
         setErrorMessage(msg);
       }
@@ -271,15 +280,18 @@ export default function LoginPage() {
               </div>
             )}
 
+            {/* ช่องระบุตัวตน: สลับข้อความและประเภทตามสถานะ Login หรือ Register */}
             <div>
-              <label className="block text-gray-700 font-bold mb-1 ml-1 text-sm">เบอร์โทรศัพท์ หรือ อีเมล</label>
+              <label className="block text-gray-700 font-bold mb-1 ml-1 text-sm">
+                {isLogin ? "เบอร์โทรศัพท์ หรือ อีเมล" : "อีเมล (ใช้สำหรับเข้าสู่ระบบและกู้รหัสผ่าน)"}
+              </label>
               <input 
                 required 
-                type="text" 
+                type={isLogin ? "text" : "email"} 
                 value={contact} 
                 onChange={(e) => setContact(e.target.value)} 
                 disabled={isLocked}
-                placeholder="กรอกเบอร์โทร 10 หลัก หรืออีเมล" 
+                placeholder={isLogin ? "กรอกเบอร์โทร 10 หลัก หรืออีเมล" : "เช่น yourname@gmail.com"} 
                 className={`w-full p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-[#f26522] focus:bg-white transition-all ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`} 
               />
             </div>
@@ -298,8 +310,7 @@ export default function LoginPage() {
               
               {isLogin && (
                 <div className="text-right mt-2">
-                 {/* ✅ เปลี่ยนเป็นชี้ไปหน้ากรอกอีเมลเพื่อส่งลิงก์ลับ */}
-                  <Link href="/forgot-password" className="text-sm font-medium text-gray-500 hover:text-[#f26522] ">
+                  <Link href="/forgot-password" className="text-sm font-medium text-gray-500 hover:text-[#f26522]">
                     ลืมรหัสผ่าน?
                   </Link>
                 </div>
@@ -336,7 +347,10 @@ export default function LoginPage() {
             <p className="text-gray-500 text-sm font-medium">
               {isLogin ? "ยังไม่มีบัญชีใช่ไหม?" : "มีบัญชีอยู่แล้วใช่ไหม?"} 
               <button 
-                onClick={() => { setIsLogin(!isLogin); setErrorMessage(""); }} 
+                onClick={() => { 
+                  setIsLogin(!isLogin); 
+                  setErrorMessage(""); 
+                }} 
                 disabled={isLocked}
                 className={`font-bold ml-2 transition-colors ${isLocked ? 'text-gray-400 cursor-not-allowed' : 'text-[#f26522] hover:underline'}`}
               >
