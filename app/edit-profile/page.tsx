@@ -11,6 +11,11 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+// 🌟 ย้ายค่าคงที่ออกนอก Component แก้ปัญหา ESLint exhaustive-deps อย่างถาวร
+const DIET_OPTIONS = ["ทั่วไป", "มังสวิรัติ", "เจ", "คีโต (Keto)", "ฮาลาล (Halal)"];
+const DISEASE_OPTIONS = ["เบาหวาน", "ความดันโลหิตสูง", "โรคหัวใจ", "โรคไต", "โรคเกาต์", "ไขมันในเลือดสูง"];
+const ALLERGY_OPTIONS = ["กุ้ง", "ปลาหมึก", "ปู", "หอย", "ปลา", "ถั่วลิสง", "นมวัว", "แป้งสาลี", "ไข่", "ถั่วเหลือง"];
+
 export default function EditProfilePage() {
   const router = useRouter();
   
@@ -20,7 +25,9 @@ export default function EditProfilePage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [currentUsername, setCurrentUsername] = useState<string>("");
   const [name, setName] = useState("คุณผู้ใช้ ใจดี");
-  const [profileImage, setProfileImage] = useState("https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=facearea&facepad=2&w=256&h=256&q=80");
+  const [profileImage, setProfileImage] = useState(
+    "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=facearea&facepad=2&w=256&h=256&q=80"
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -32,7 +39,6 @@ export default function EditProfilePage() {
 
   // ข้อมูลการทานอาหาร
   const [diet, setDiet] = useState<string>("ทั่วไป");
-  const dietOptions = ["ทั่วไป", "มังสวิรัติ", "เจ", "คีโต (Keto)", "ฮาลาล (Halal)"];
 
   // ข้อมูลสุขภาพ (อาการแพ้ & โรคประจำตัว)
   const [allergies, setAllergies] = useState<string[]>([]);
@@ -40,9 +46,6 @@ export default function EditProfilePage() {
 
   const [diseases, setDiseases] = useState<string[]>([]);
   const [newDisease, setNewDisease] = useState("");
-
-  const diseaseOptions = ["เบาหวาน", "ความดันโลหิตสูง", "โรคหัวใจ", "โรคไต", "โรคเกาต์", "ไขมันในเลือดสูง"];
-  const allergyOptions = ["กุ้ง", "ปลาหมึก", "ปู", "หอย", "ปลา", "ถั่วลิสง", "นมวัว", "แป้งสาลี", "ไข่", "ถั่วเหลือง"];
 
   // ==========================================
   // 🌟 โหลดข้อมูลจาก Supabase และ Storage
@@ -54,47 +57,76 @@ export default function EditProfilePage() {
       // 1. อ่านข้อมูลผู้ใช้จาก Session
       const savedUserStr = sessionStorage.getItem("mockUser");
       if (savedUserStr) {
-        const savedUser = JSON.parse(savedUserStr);
-        if (savedUser.name) {
-          setName(savedUser.name);
-          setCurrentUsername(savedUser.name);
-          userNameFromSession = savedUser.name;
-        }
-        if (savedUser.id) setUserId(savedUser.id);
-      }
-
-      // 2. ดึงข้อมูลล่าสุดจาก Supabase เพื่อนำมาแสดงบนฟอร์ม
-      if (userNameFromSession) {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("full_name", userNameFromSession)
-          .maybeSingle();
-
-        if (data && !error) {
-          if (data.id) setUserId(data.id);
-          if (data.age) setAge(data.age.toString());
-          if (data.health_issues) {
-            const rawIssues = data.health_issues.split(",").map((s: string) => s.trim()).filter(Boolean);
-            setDiseases(rawIssues.filter((i: string) => diseaseOptions.includes(i)));
-            setAllergies(rawIssues.filter((i: string) => !diseaseOptions.includes(i)));
+        try {
+          const savedUser = JSON.parse(savedUserStr);
+          if (savedUser.name) {
+            setName(savedUser.name);
+            setCurrentUsername(savedUser.name);
+            userNameFromSession = savedUser.name;
           }
+          if (savedUser.id) setUserId(savedUser.id);
+        } catch (e) {
+          console.error("Parse user error:", e);
         }
       }
 
-     const savedAge = localStorage.getItem("userAge");
-    if (savedAge) setAge(savedAge); // ✅ แก้จุดที่ 1
+      // 2. ดึงข้อมูลล่าสุดจาก Supabase
+      if (userNameFromSession) {
+        try {
+          const { data, error } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("full_name", userNameFromSession)
+            .maybeSingle();
 
-    const savedWeight = localStorage.getItem("userWeight");
-    if (savedWeight) setWeight(savedWeight);
+          if (data && !error) {
+            if (data.id) setUserId(data.id);
+            if (data.age) setAge(data.age.toString());
+            if (data.health_issues) {
+              const rawIssues = data.health_issues.split(",").map((s: string) => s.trim()).filter(Boolean);
+              setDiseases(rawIssues.filter((i: string) => DISEASE_OPTIONS.includes(i)));
+              setAllergies(rawIssues.filter((i: string) => !DISEASE_OPTIONS.includes(i)));
+            }
+          }
+        } catch (e) {
+          console.error("Supabase load error:", e);
+        }
+      }
 
-    const savedHeight = localStorage.getItem("userHeight");
-    if (savedHeight) setHeight(savedHeight);
-  };
+      // 3. ดึงค่าจาก LocalStorage เสริม (ดักอ่านคีย์ทุกรูปแบบ)
+      const savedGender =
+        localStorage.getItem("user_gender") ||
+        localStorage.getItem("userGender") ||
+        localStorage.getItem("gender");
+      if (savedGender) setGender(savedGender);
 
-  loadUserData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, []); // ✅ ใส่คอมเมนต์ปิด warning ก่อนปิดวงเล็บ
+      const savedAge =
+        localStorage.getItem("user_age") ||
+        localStorage.getItem("userAge") ||
+        localStorage.getItem("age");
+      if (savedAge) setAge(savedAge);
+
+      const savedWeight =
+        localStorage.getItem("user_weight") ||
+        localStorage.getItem("userWeight") ||
+        localStorage.getItem("weight");
+      if (savedWeight) setWeight(savedWeight);
+
+      const savedHeight =
+        localStorage.getItem("user_height") ||
+        localStorage.getItem("userHeight") ||
+        localStorage.getItem("height");
+      if (savedHeight) setHeight(savedHeight);
+
+      const savedDiet = localStorage.getItem("dietaryPreference");
+      if (savedDiet) setDiet(savedDiet);
+
+      const savedImg = localStorage.getItem("profileImage");
+      if (savedImg) setProfileImage(savedImg);
+    };
+
+    loadUserData();
+  }, []);
 
   // ==========================================
   // 🌟 ฟังก์ชันคำนวณ BMI และ แคลอรี่ (Real-time)
@@ -124,9 +156,9 @@ export default function EditProfilePage() {
     const a = parseInt(age);
 
     if (w > 0 && h > 0 && a > 0) {
- const bmr = (gender === "male")
-  ? (10 * w) + (6.25 * h) - (5 * a) + 5
-  : (10 * w) + (6.25 * h) - (5 * a) - 161;
+      const bmr = (gender === "male")
+        ? (10 * w) + (6.25 * h) - (5 * a) + 5
+        : (10 * w) + (6.25 * h) - (5 * a) - 161;
 
       const tdee = Math.round(bmr * 1.55);
       return { bmr: Math.round(bmr), tdee, perMeal: Math.round(tdee / 3) };
@@ -160,7 +192,7 @@ export default function EditProfilePage() {
   const removeDisease = (target: string) => { setDiseases(diseases.filter(d => d !== target)); };
 
   // ==========================================
-  // 🌟 ฟังก์ชัน SAVE (บันทึกลง Supabase จริง + LocalStorage)
+  // 🌟 ฟังก์ชัน SAVE (บันทึกให้ตรงคีย์กัน 100%)
   // ==========================================
   const handleSave = async () => {
     setIsSaving(true);
@@ -169,7 +201,7 @@ export default function EditProfilePage() {
       const combinedIssues = [...diseases, ...allergies].filter(Boolean);
       const healthIssuesPayload = combinedIssues.length > 0 ? combinedIssues.join(", ") : null;
 
-      // 1. ส่งข้อมูลอัปเดตไปยัง Supabase profiles (ถ้าเว้นว่างจะส่ง null เพื่อล้างค่าใน DB)
+      // 1. ส่งข้อมูลอัปเดตไปยัง Supabase profiles
       const updateData = {
         full_name: trimmedName,
         age: age && parseInt(age) > 0 ? parseInt(age) : null,
@@ -187,29 +219,76 @@ export default function EditProfilePage() {
       // 2. บันทึกลง Client Cache (sessionStorage & localStorage)
       const savedUserStr = sessionStorage.getItem("mockUser");
       if (savedUserStr) {
-        const savedUser = JSON.parse(savedUserStr);
-        savedUser.name = trimmedName;
-        sessionStorage.setItem("mockUser", JSON.stringify(savedUser));
+        try {
+          const savedUser = JSON.parse(savedUserStr);
+          savedUser.name = trimmedName;
+          sessionStorage.setItem("mockUser", JSON.stringify(savedUser));
+        } catch (e) {
+          console.error("Set mockUser error:", e);
+        }
       }
 
       localStorage.setItem("profileImage", profileImage);
       localStorage.setItem("dietaryPreference", diet);
       
-      if (allergies.length > 0) localStorage.setItem("allergies", allergies.join(","));
-      else localStorage.removeItem("allergies");
+      // 🌟 บันทึกเพศ (Gender) ให้ครบทุกคีย์
+      localStorage.setItem("user_gender", gender);
+      localStorage.setItem("userGender", gender);
+      localStorage.setItem("gender", gender);
 
-      if (diseases.length > 0) localStorage.setItem("diseases", diseases.join(","));
-      else localStorage.removeItem("diseases");
+      // 🌟 บันทึกอายุ (Age) ให้ตรงกับหน้า health-profile
+      if (age && age.trim()) {
+        localStorage.setItem("user_age", age.trim());
+        localStorage.setItem("userAge", age.trim());
+        localStorage.setItem("age", age.trim());
+      } else {
+        localStorage.removeItem("user_age");
+        localStorage.removeItem("userAge");
+        localStorage.removeItem("age");
+      }
 
-      if (age && age.trim()) localStorage.setItem("userAge", age.trim());
-      else localStorage.removeItem("userAge");
+      // 🌟 บันทึกน้ำหนัก (Weight) ให้ตรงกับหน้า health-profile
+      if (weight && weight.trim()) {
+        localStorage.setItem("user_weight", weight.trim());
+        localStorage.setItem("userWeight", weight.trim());
+        localStorage.setItem("weight", weight.trim());
+      } else {
+        localStorage.removeItem("user_weight");
+        localStorage.removeItem("userWeight");
+        localStorage.removeItem("weight");
+      }
 
-      if (weight && weight.trim()) localStorage.setItem("userWeight", weight.trim());
-      else localStorage.removeItem("userWeight");
+      // 🌟 บันทึกส่วนสูง (Height) ให้ตรงกับหน้า health-profile
+      if (height && height.trim()) {
+        localStorage.setItem("user_height", height.trim());
+        localStorage.setItem("userHeight", height.trim());
+        localStorage.setItem("height", height.trim());
+      } else {
+        localStorage.removeItem("user_height");
+        localStorage.removeItem("userHeight");
+        localStorage.removeItem("height");
+      }
 
-      if (height && height.trim()) localStorage.setItem("userHeight", height.trim());
-      else localStorage.removeItem("userHeight");
+      // ข้อมูลสุขภาพ
+      if (allergies.length > 0) {
+        const allergyStr = allergies.join(",");
+        localStorage.setItem("allergies", allergyStr);
+        localStorage.setItem("user_allergies", allergyStr);
+      } else {
+        localStorage.removeItem("allergies");
+        localStorage.removeItem("user_allergies");
+      }
 
+      if (diseases.length > 0) {
+        const diseaseStr = diseases.join(",");
+        localStorage.setItem("diseases", diseaseStr);
+        localStorage.setItem("user_diseases", diseaseStr);
+      } else {
+        localStorage.removeItem("diseases");
+        localStorage.removeItem("user_diseases");
+      }
+
+      // บันทึกค่า BMI & TDEE
       if (bmi > 0) {
         localStorage.setItem("userBMI", bmi.toString());
         localStorage.setItem("userBMIStatus", bmiStatus.text);
@@ -226,9 +305,10 @@ export default function EditProfilePage() {
         localStorage.removeItem("userTDEE");
       }
 
+      // ส่ง Event กระตุ้นให้ทุกหน้าอัปเดตทันที
       window.dispatchEvent(new Event("profileUpdated"));
-      alert("บันทึกข้อมูลลงฐานข้อมูล Supabase สำเร็จแล้ว! ✨");
-      router.push("/profile");
+      alert("บันทึกข้อมูลเรียบร้อยแล้ว! ✨");
+      router.push("/health-profile");
     } catch (error) {
       console.error("บันทึกข้อมูลล้มเหลว:", error);
       alert("เกิดข้อผิดพลาดในการเชื่อมต่อ Supabase");
@@ -336,7 +416,7 @@ export default function EditProfilePage() {
                 <h2 className="text-lg font-bold text-gray-800">รูปแบบการทานอาหาร</h2>
               </div>
               <div className="flex flex-wrap gap-3">
-                {dietOptions.map((option, index) => (
+                {DIET_OPTIONS.map((option, index) => (
                   <button 
                     key={index}
                     type="button"
@@ -383,7 +463,7 @@ export default function EditProfilePage() {
                       className="flex-grow p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-200 outline-none text-sm font-medium bg-white"
                     />
                     <datalist id="allergy-suggestions">
-                      {allergyOptions.map((a, i) => (
+                      {ALLERGY_OPTIONS.map((a, i) => (
                         <option key={i} value={a} />
                       ))}
                     </datalist>
@@ -414,7 +494,7 @@ export default function EditProfilePage() {
                       className="flex-grow p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-200 outline-none text-sm font-medium bg-white"
                     />
                     <datalist id="disease-suggestions">
-                      {diseaseOptions.map((d, i) => (
+                      {DISEASE_OPTIONS.map((d, i) => (
                         <option key={i} value={d} />
                       ))}
                     </datalist>
@@ -432,7 +512,7 @@ export default function EditProfilePage() {
           <button 
             type="button"
             onClick={() => router.back()}
-            className="px-8 py-3.5 bg-white border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-100 transition-colors shadow-sm w-full sm:w-auto"
+            className="px-8 py-3.5 bg-white border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-100 transition-colors shadow-sm w-full sm:w-auto cursor-pointer"
           >
             ยกเลิก
           </button>
@@ -440,7 +520,7 @@ export default function EditProfilePage() {
             type="button"
             disabled={isSaving}
             onClick={handleSave}
-            className="px-8 py-3.5 bg-[#f26522] hover:bg-orange-600 text-white font-bold rounded-xl transition-all shadow-md w-full sm:w-auto disabled:opacity-50"
+            className="px-8 py-3.5 bg-[#f26522] hover:bg-orange-600 text-white font-bold rounded-xl transition-all shadow-md w-full sm:w-auto disabled:opacity-50 cursor-pointer"
           >
             {isSaving ? "กำลังบันทึกข้อมูล..." : "บันทึกข้อมูล"}
           </button>
