@@ -15,6 +15,18 @@ export default function ForgotPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  // 🔍 ฟังก์ชันระบุ URL กล่องจดหมายตามโดเมนอีเมล
+  const getEmailProviderUrl = (targetEmail: string) => {
+    const domain = targetEmail.split("@")[1]?.toLowerCase();
+    if (!domain) return null;
+
+    if (domain === "gmail.com") return "https://mail.google.com";
+    if (["outlook.com", "hotmail.com", "live.com"].includes(domain)) return "https://outlook.live.com";
+    if (domain === "yahoo.com") return "https://mail.yahoo.com";
+    if (domain === "icloud.com") return "https://www.icloud.com/mail";
+    return null;
+  };
+
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
@@ -45,6 +57,9 @@ export default function ForgotPasswordPage() {
     }
   };
 
+  const emailDomain = email.includes("@") ? email.split("@")[1] : "";
+  const providerUrl = getEmailProviderUrl(email);
+
   return (
     <div className="min-h-screen bg-[#fcf9f6] flex items-center justify-center p-4 font-sans">
       <div className="max-w-md w-full bg-white rounded-3xl shadow-sm border border-gray-100 p-6 sm:p-8">
@@ -67,7 +82,19 @@ export default function ForgotPasswordPage() {
                 : "bg-red-50 text-red-600 border border-red-200"
             }`}
           >
-            {message.text}
+            <p className="leading-relaxed">{message.text}</p>
+
+            {/* ปุ่มเปิดเว็บเมลปลายทางทันทีเมื่อส่งสำเร็จ */}
+            {message.type === "success" && providerUrl && (
+              <a
+                href={providerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 flex items-center justify-center gap-2 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-xl shadow-sm transition-all active:scale-95 text-xs text-center"
+              >
+                <span>✉️</span> เปิด {emailDomain} ในแท็บใหม่
+              </a>
+            )}
           </div>
         )}
 

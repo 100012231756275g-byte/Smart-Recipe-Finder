@@ -18,9 +18,15 @@ export default function LoginPage() {
   const router = useRouter();
   const [isLogin, setIsLogin] = useState(true);
 
+  // ข้อมูลสำหรับ Login
   const [contact, setContact] = useState(""); 
-  const [password, setPassword] = useState("");
+  
+  // ข้อมูลสำหรับ Register
   const [name, setName] = useState(""); 
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+
+  const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -86,21 +92,6 @@ export default function LoginPage() {
     }
   };
 
-  // ตรวจสอบข้อมูลสำหรับการ Login (รองรับทั้งเบอร์และอีเมล)
-  const getAuthCredentials = (inputStr: string, pass: string) => {
-    const trimmed = inputStr.trim();
-    const isPhone = /^[0-9]+$/.test(trimmed);
-
-    if (isPhone) {
-      let phoneNum = trimmed;
-      if (phoneNum.startsWith("0")) {
-        phoneNum = "+66" + phoneNum.slice(1);
-      }
-      return { phone: phoneNum, password: pass };
-    }
-    return { email: trimmed, password: pass };
-  };
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const currentTime = new Date().getTime(); 
@@ -132,9 +123,37 @@ export default function LoginPage() {
     setErrorMessage("");
 
     try {
-      const authData = getAuthCredentials(contact, password);
-      const { data, error } = await supabase.auth.signInWithPassword(authData);
+    const trimmedInput = contact.trim();
+      const isPhone = /^[0-9]+$/.test(trimmedInput);
+      
+      // ✅ กำหนด Type แบบ Union ให้ตรงกับ Supabase (ไม่ต้องใช้ as any)
+      let authCredentials:
+        | { email: string; password: string }
+        | { phone: string; password: string };
 
+      if (isPhone) {
+        // ค้นหาอีเมลที่ผูกกับเบอร์โทรนี้ในตาราง profiles
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("email")
+          .eq("phone", trimmedInput)
+          .maybeSingle();
+
+        if (profileData?.email) {
+          // พบบัญชีในระบบใหม่: ส่งอีเมลไปล็อกอิน
+          authCredentials = { email: profileData.email, password: password };
+        } else {
+          // ✅ เปลี่ยนเป็น const แทน let เพื่อแก้ lint(prefer-const)
+          const phoneNum = trimmedInput.startsWith("0") ? "+66" + trimmedInput.slice(1) : trimmedInput;
+          authCredentials = { phone: phoneNum, password: password };
+        }
+      } else {
+        // ล็อกอินด้วยอีเมลโดยตรง
+        authCredentials = { email: trimmedInput.toLowerCase(), password: password };
+      }
+
+      // ✅ ตัด as any ออก ส่ง authCredentials ได้ตรงๆ ทันที
+      const { data, error } = await supabase.auth.signInWithPassword(authCredentials);
       if (error) throw error;
 
       resetSecurity(); 
@@ -142,7 +161,7 @@ export default function LoginPage() {
       localStorage.removeItem("isAdmin");
       
       const userName = data.user?.user_metadata?.full_name || "สมาชิก";
-      sessionStorage.setItem("mockUser", JSON.stringify({ name: userName, contact: contact }));
+      sessionStorage.setItem("mockUser", JSON.stringify({ name: userName, contact: trimmedInput }));
       if (data.user?.email) {
         sessionStorage.setItem("userEmail", data.user.email);
       }
@@ -164,49 +183,71 @@ export default function LoginPage() {
     setIsLoading(true);
     setErrorMessage("");
 
-    const emailTrimmed = contact.trim().toLowerCase();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailTrimmed = email.trim().toLowerCase();
+    const phoneTrimmed = phone.trim().replace(/\D/g, "");
 
-    // 🔒 บังคับตรวจสอบความถูกต้องของอีเมล
-    if (!emailRegex.test(emailTrimmed)) {
-      setErrorMessage("กรุณากรอกอีเมลที่ถูกต้องสำหรับการสมัครสมาชิก (เช่น yourname@gmail.com)");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
+      setErrorMessage("กรุณากรอกอีเมลที่ถูกต้อง (เช่น yourname@gmail.com)");
+      setIsLoading(false);
+      return;
+    }
+
+    if (phoneTrimmed.length !== 10) {
+      setErrorMessage("กรุณากรอกเบอร์โทรศัพท์ 10 หลักให้ถูกต้อง");
       setIsLoading(false);
       return;
     }
 
     try {
-      // 1. บันทึกบัญชีด้วย Email ลง auth.users ของ Supabase
-      const { data: authDataRes, error } = await supabase.auth.signUp({
+      // ตรวจสอบเบอร์โทรซ้ำในระบบ
+      const { data: existingPhone } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("phone", phoneTrimmed)
+        .maybeSingle();
+
+      if (existingPhone) {
+        setErrorMessage("เบอร์โทรศัพท์นี้ถูกลงทะเบียนไว้แล้ว");
+        setIsLoading(false);
+        return;
+      }
+
+      // สมัครสมาชิกด้วยอีเมล
+      const { data: authDataRes, error: authError } = await supabase.auth.signUp({
         email: emailTrimmed,
         password: password,
         options: {
-          data: { full_name: name }
+          data: { 
+            full_name: name,
+            phone_number: phoneTrimmed 
+          }
         }
       });
 
-      if (error) throw error;
+      if (authError) throw authError;
 
+      // บันทึกโปรไฟล์พร้อมเบอร์และอีเมล
       if (authDataRes.user) {
-        // 2. สร้างข้อมูลในตาราง profiles
         const { error: profileError } = await supabase
           .from("profiles")
           .insert([
             {
               id: authDataRes.user.id, 
               full_name: name,
+              email: emailTrimmed,
+              phone: phoneTrimmed,
               role: "User",
               status: "Active"
             }
           ]);
         
         if (profileError) {
-          console.error("สร้าง Profile ไม่สำเร็จ:", profileError);
+          console.error("บันทึกตาราง profiles ไม่สำเร็จ:", profileError);
         }
       }
 
       alert(`✨ สมัครสมาชิกสำเร็จ! ยินดีต้อนรับคุณ ${name}`);
 
-      // ล้างค่าเก่า
       localStorage.removeItem("userAge");
       localStorage.removeItem("userBMI");
       localStorage.removeItem("userBMIStatus");
@@ -236,7 +277,7 @@ export default function LoginPage() {
   const isLocked = lockoutEndTime !== null;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-sans">
       <div className="bg-white max-w-md w-full rounded-[2rem] shadow-xl p-8 border border-gray-100 relative overflow-hidden">
         
         {isLocked && (
@@ -265,36 +306,64 @@ export default function LoginPage() {
 
           <form onSubmit={isLogin ? handleLogin : handleRegister} className="space-y-4">
             
-            {!isLogin && (
+            {/* โหมดสมัครสมาชิก */}
+            {!isLogin ? (
+              <>
+                <div>
+                  <label className="block text-gray-700 font-bold mb-1 ml-1 text-sm">ชื่อผู้ใช้งาน</label>
+                  <input 
+                    required 
+                    type="text" 
+                    value={name} 
+                    onChange={(e) => setName(e.target.value)} 
+                    disabled={isLocked}
+                    placeholder="เช่น สมชาย ใจดี" 
+                    className={`w-full p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-[#f26522] focus:bg-white transition-all ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-gray-700 font-bold mb-1 ml-1 text-sm">อีเมล </label>
+                  <input 
+                    required 
+                    type="email" 
+                    value={email} 
+                    onChange={(e) => setEmail(e.target.value)} 
+                    disabled={isLocked}
+                    placeholder="เช่น yourname@gmail.com" 
+                    className={`w-full p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-[#f26522] focus:bg-white transition-all ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-gray-700 font-bold mb-1 ml-1 text-sm">เบอร์โทรศัพท์ (10 หลัก)</label>
+                  <input 
+                    required 
+                    type="tel" 
+                    maxLength={10}
+                    value={phone} 
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))} 
+                    disabled={isLocked}
+                    placeholder="เช่น 0812345678" 
+                    className={`w-full p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-[#f26522] focus:bg-white transition-all ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                  />
+                </div>
+              </>
+            ) : (
+              /* โหมดเข้าสู่ระบบ */
               <div>
-                <label className="block text-gray-700 font-bold mb-1 ml-1 text-sm">ชื่อผู้ใช้งาน</label>
+                <label className="block text-gray-700 font-bold mb-1 ml-1 text-sm">เบอร์โทรศัพท์ หรือ อีเมล</label>
                 <input 
                   required 
                   type="text" 
-                  value={name} 
-                  onChange={(e) => setName(e.target.value)} 
+                  value={contact} 
+                  onChange={(e) => setContact(e.target.value)} 
                   disabled={isLocked}
-                  placeholder="เช่น สมชาย ใจดี" 
+                  placeholder="กรอกเบอร์โทร 10 หลัก หรืออีเมล" 
                   className={`w-full p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-[#f26522] focus:bg-white transition-all ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`} 
                 />
               </div>
             )}
-
-            {/* ช่องระบุตัวตน: สลับข้อความและประเภทตามสถานะ Login หรือ Register */}
-            <div>
-              <label className="block text-gray-700 font-bold mb-1 ml-1 text-sm">
-                {isLogin ? "เบอร์โทรศัพท์ หรือ อีเมล" : "อีเมล (ใช้สำหรับเข้าสู่ระบบและกู้รหัสผ่าน)"}
-              </label>
-              <input 
-                required 
-                type={isLogin ? "text" : "email"} 
-                value={contact} 
-                onChange={(e) => setContact(e.target.value)} 
-                disabled={isLocked}
-                placeholder={isLogin ? "กรอกเบอร์โทร 10 หลัก หรืออีเมล" : "เช่น yourname@gmail.com"} 
-                className={`w-full p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-[#f26522] focus:bg-white transition-all ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`} 
-              />
-            </div>
 
             <div className="relative">
               <label className="block text-gray-700 font-bold mb-1 ml-1 text-sm">รหัสผ่าน</label>
