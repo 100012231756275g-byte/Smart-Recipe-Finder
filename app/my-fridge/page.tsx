@@ -14,7 +14,6 @@ interface Ingredient {
   expiry_date?: string;
 }
 
-// 🌟 ฟังก์ชันสุ่มเมนูอยู่นอก Component ป้องกันข้อผิดพลาด react-hooks/purity
 function getRandomItem<T>(list: T[]): T {
   return list[Math.floor(Math.random() * list.length)];
 }
@@ -70,18 +69,11 @@ export default function MyFridgePage() {
           setIngredients(updatedItems);
         } catch (e) {
           console.error("Parse fridge items error:", e);
+          setIngredients([]);
         }
       } else {
-        const defaultItems: Ingredient[] = [
-          { id: "1", name: "ไข่ไก่", amount: "6 ฟอง", icon: "🥚", daysLeft: 1, expiryDateText: getFutureDateStr(1), expiry_date: getFutureDateStr(1) },
-          { id: "2", name: "เนื้อหมู", amount: "300 กรัม", icon: "🥩", daysLeft: 2, expiryDateText: getFutureDateStr(2), expiry_date: getFutureDateStr(2) },
-          { id: "3", name: "กะเพรา", amount: "1 กำมือ", icon: "🌿", daysLeft: 5, expiryDateText: getFutureDateStr(5), expiry_date: getFutureDateStr(5) },
-          { id: "4", name: "กะทิ", amount: "400 มล.", icon: "🥥", daysLeft: 13, expiryDateText: getFutureDateStr(13), expiry_date: getFutureDateStr(13) },
-          { id: "5", name: "มะเขือเทศ", amount: "4 ลูก", icon: "🍅", daysLeft: 7, expiryDateText: getFutureDateStr(7), expiry_date: getFutureDateStr(7) },
-        ];
-        setIngredients(defaultItems);
-        localStorage.setItem("myFridgeItems", JSON.stringify(defaultItems));
-        localStorage.setItem("fridge", JSON.stringify(defaultItems));
+        // เคลียร์ค่าเริ่มต้นออกทั้งหมด เป็นตู้เย็นว่างเปล่าสำหรับผู้ใช้ใหม่
+        setIngredients([]);
       }
 
       setIsMounted(true);
@@ -196,7 +188,6 @@ export default function MyFridgePage() {
           possibleRecipes = allRecipes;
         }
 
-        // 🌟 เรียกใช้ฟังก์ชันสุ่มภายนอก Component
         const randomRecipe = getRandomItem(possibleRecipes);
 
         setTimeout(() => {

@@ -32,15 +32,16 @@ export default function Navbar() {
       
       const savedImage = localStorage.getItem("profileImage");
       if (savedImage) setProfileImage(savedImage);
+      else setProfileImage(defaultImage);
 
-      // 🚨 ระบบตรวจสถานะแบนจาก Supabase
+      // 🚨 ตรวจสอบสถานะบัญชีจาก Supabase
       if (status === "true") {
         const mockUserRaw = sessionStorage.getItem("mockUser");
         if (mockUserRaw) {
-          const mockUser = JSON.parse(mockUserRaw);
+          try {
+            const mockUser = JSON.parse(mockUserRaw);
 
-          if (mockUser.contact !== "admin") {
-            try {
+            if (mockUser.contact !== "admin") {
               const { data, error } = await supabase
                 .from("profiles")
                 .select("status")
@@ -50,16 +51,18 @@ export default function Navbar() {
               if (!error && data && data.status === "banned") {
                 alert("🚨 บัญชีของคุณถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ");
                 
-                sessionStorage.removeItem("isLoggedIn");
-                sessionStorage.removeItem("mockUser");
-                sessionStorage.removeItem("userEmail");
+                await supabase.auth.signOut();
+                sessionStorage.clear();
+                localStorage.clear();
                 setIsUserLoggedIn(false);
                 
+                window.dispatchEvent(new Event("profileUpdated"));
+                window.dispatchEvent(new Event("fridgeUpdated"));
                 router.push("/login");
               }
-            } catch (err) {
-              console.error("ระบบตรวจสอบสถานะผิดพลาด:", err);
             }
+          } catch (err) {
+            console.error("ระบบตรวจสอบสถานะผิดพลาด:", err);
           }
         }
       }
@@ -68,20 +71,56 @@ export default function Navbar() {
     loadUserData();
     window.addEventListener("profileUpdated", loadUserData);
     return () => window.removeEventListener("profileUpdated", loadUserData);
-  }, [router]);
+  }, [router, defaultImage]);
 
   // 🚫 ซ่อน Navbar ในหน้า Auth หรือ Admin
   if (pathname === '/login' || pathname === '/register' || pathname.startsWith('/admin')) {
     return null;
   }
 
-  const handleLogout = () => {
+  // 🧹 ฟังก์ชันออกจากระบบแบบล้างข้อมูลหมดจด 100%
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error("Supabase signOut error:", e);
+    }
+
+    // 1. ล้าง Session ข้อมูลล็อกอิน
     sessionStorage.removeItem("isLoggedIn");
     sessionStorage.removeItem("mockUser");
     sessionStorage.removeItem("userEmail");
-    
+
+    // 2. ล้าง Cookie ของ Admin
+    document.cookie = "isAdmin=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+
+    // 3. ล้างแคชข้อมูลตู้เย็น สุขภาพ และประวัติทั้งหมดในเครื่อง
+    localStorage.removeItem("myFridgeItems");
+    localStorage.removeItem("fridge");
+    localStorage.removeItem("nutrition_logs");
+    localStorage.removeItem("allergies");
+    localStorage.removeItem("diseases");
+    localStorage.removeItem("user_gender");
+    localStorage.removeItem("user_age");
+    localStorage.removeItem("user_weight");
+    localStorage.removeItem("user_height");
+    localStorage.removeItem("userAge");
+    localStorage.removeItem("userBMI");
+    localStorage.removeItem("userBMIStatus");
+    localStorage.removeItem("userTDEE");
+    localStorage.removeItem("userBMR");
+    localStorage.removeItem("isAdmin");
+    localStorage.removeItem("profileImage");
+
+    // 4. รีเซ็ต State ของ Component
     setIsUserLoggedIn(false);
     setShowLogoutConfirm(false);
+    setProfileImage(defaultImage);
+
+    // 5. ส่ง Event ไปอัปเดตทุกหน้าในระบบ
+    window.dispatchEvent(new Event("profileUpdated"));
+    window.dispatchEvent(new Event("fridgeUpdated"));
+
     router.push("/");
   };
 
@@ -109,7 +148,7 @@ export default function Navbar() {
                 <span className="text-white font-black text-2xl sm:text-3xl tracking-tight hidden md:block">cook cook</span>
               </Link>
 
-              {/* 🌟 4 ปุ่มหลักสำหรับ Desktop (แสดงบนจอ lg ขึ้นไป) */}
+              {/* 🌟 4 ปุ่มหลักสำหรับ Desktop */}
               <div className="hidden lg:flex items-center gap-5 text-white font-bold text-sm bg-orange-600/30 px-5 py-2.5 rounded-full">
                 <button 
                   onClick={() => handleRestrictedRoute('/search')} 
@@ -141,7 +180,6 @@ export default function Navbar() {
             {/* ฝั่งขวา: ช่องค้นหา + โปรไฟล์ / ปุ่ม Login */}
             <div className="flex items-center gap-2 sm:gap-4 w-full justify-end max-w-2xl">
               
-              {/* SearchBar แสดงบนจอแท็บเล็ตและคอม */}
               <div className="hidden sm:block w-full max-w-md z-[60]">
                 <SearchBar />
               </div>
@@ -150,19 +188,19 @@ export default function Navbar() {
                 <div className="relative shrink-0 z-[80]">
                   <button 
                     onClick={() => setIsDropdownOpen(!isDropdownOpen)} 
-                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-full overflow-hidden border-2 border-white shadow-md relative block focus:outline-none transition-transform hover:scale-105 active:scale-95"
+                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-full overflow-hidden border-2 border-white shadow-md relative block focus:outline-none transition-transform hover:scale-105 active:scale-95 cursor-pointer"
                   >
                     <Image src={profileImage} alt="User Profile" fill sizes="48px" className="object-cover" />
                   </button>
                   
                   {isDropdownOpen && (
                     <div className="absolute right-0 mt-3 w-48 bg-white border border-gray-100 rounded-2xl shadow-xl py-2 z-[90] overflow-hidden text-left animate-fade-in">
-                      <button onClick={() => { setIsDropdownOpen(false); router.push("/profile"); }} className="w-full text-left block px-5 py-2.5 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f26522]">โปรไฟล์</button>
-                      <button onClick={() => { setIsDropdownOpen(false); router.push("/edit-profile"); }} className="w-full text-left block px-5 py-2.5 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f26522]">แก้ไขโปรไฟล์</button>
-                      <button onClick={() => { setIsDropdownOpen(false); router.push("/favorites"); }} className="w-full text-left block px-5 py-2.5 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f26522]">รายการโปรด</button>
-                      <button onClick={() => { setIsDropdownOpen(false); router.push("/history"); }} className="w-full text-left block px-5 py-2.5 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f26522]">ประวัติล่าสุด</button>
+                      <button onClick={() => { setIsDropdownOpen(false); router.push("/profile"); }} className="w-full text-left block px-5 py-2.5 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f26522] cursor-pointer">โปรไฟล์</button>
+                      <button onClick={() => { setIsDropdownOpen(false); router.push("/edit-profile"); }} className="w-full text-left block px-5 py-2.5 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f26522] cursor-pointer">แก้ไขโปรไฟล์</button>
+                      <button onClick={() => { setIsDropdownOpen(false); router.push("/favorites"); }} className="w-full text-left block px-5 py-2.5 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f26522] cursor-pointer">รายการโปรด</button>
+                      <button onClick={() => { setIsDropdownOpen(false); router.push("/history"); }} className="w-full text-left block px-5 py-2.5 text-sm text-gray-700 hover:bg-orange-50 hover:text-[#f26522] cursor-pointer">ประวัติล่าสุด</button>
                       <div className="border-t border-gray-100 my-1"></div>
-                      <button onClick={() => { setIsDropdownOpen(false); setShowLogoutConfirm(true); }} className="w-full text-left block px-5 py-2.5 text-sm text-red-500 font-medium hover:bg-red-50">LogOut</button>
+                      <button onClick={() => { setIsDropdownOpen(false); setShowLogoutConfirm(true); }} className="w-full text-left block px-5 py-2.5 text-sm text-red-500 font-bold hover:bg-red-50 cursor-pointer">ออกจากระบบ</button>
                     </div>
                   )}
                 </div>
@@ -178,7 +216,7 @@ export default function Navbar() {
           </div>
         </div>
 
-        {/* 📱 4 ปุ่มหลักบนมือถือ (แสดงเฉพาะหน้าจอที่ต่ำกว่า lg) */}
+        {/* 📱 4 ปุ่มหลักบนมือถือ */}
         <div className="lg:hidden bg-orange-700/40 border-t border-white/10 px-2 py-1.5 shadow-inner">
           <div className="grid grid-cols-4 gap-1 text-center">
             <button
@@ -238,8 +276,8 @@ export default function Navbar() {
           <div className="bg-white w-full max-w-xs rounded-[2rem] shadow-2xl py-6 px-6 relative text-center">
             <p className="text-lg text-gray-800 font-bold mb-6 mt-2">ต้องการออกจากระบบ?</p>
             <div className="flex gap-3 justify-center">
-              <button onClick={() => setShowLogoutConfirm(false)} className="flex-1 py-2.5 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl">ยกเลิก</button>
-              <button onClick={handleLogout} className="flex-1 py-2.5 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-xl">ยืนยัน</button>
+              <button onClick={() => setShowLogoutConfirm(false)} className="flex-1 py-2.5 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">ยกเลิก</button>
+              <button onClick={handleLogout} className="flex-1 py-2.5 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-xl transition-colors shadow-xs">ยืนยัน</button>
             </div>
           </div>
         </div>

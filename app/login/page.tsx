@@ -53,7 +53,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (!lockoutEndTime) return;
     const interval = setInterval(() => {
-      const currentTime = new Date().getTime();
+      const currentTime = new Date().getTime(); 
       const timeLeft = lockoutEndTime - currentTime;
       if (timeLeft <= 0) {
         setLockoutEndTime(null);
@@ -111,6 +111,7 @@ export default function LoginPage() {
         sessionStorage.setItem("mockUser", JSON.stringify({ name: "Super Admin", contact: "admin" }));
         
         window.dispatchEvent(new Event("profileUpdated"));
+        window.dispatchEvent(new Event("fridgeUpdated"));
         alert("✅ ยืนยันตัวตนสำเร็จ! ยินดีต้อนรับผู้ดูแลระบบ");
         router.push("/admin");
       } else {
@@ -123,16 +124,14 @@ export default function LoginPage() {
     setErrorMessage("");
 
     try {
-    const trimmedInput = contact.trim();
+      const trimmedInput = contact.trim();
       const isPhone = /^[0-9]+$/.test(trimmedInput);
       
-      // ✅ กำหนด Type แบบ Union ให้ตรงกับ Supabase (ไม่ต้องใช้ as any)
       let authCredentials:
         | { email: string; password: string }
         | { phone: string; password: string };
 
       if (isPhone) {
-        // ค้นหาอีเมลที่ผูกกับเบอร์โทรนี้ในตาราง profiles
         const { data: profileData } = await supabase
           .from("profiles")
           .select("email")
@@ -140,19 +139,15 @@ export default function LoginPage() {
           .maybeSingle();
 
         if (profileData?.email) {
-          // พบบัญชีในระบบใหม่: ส่งอีเมลไปล็อกอิน
           authCredentials = { email: profileData.email, password: password };
         } else {
-          // ✅ เปลี่ยนเป็น const แทน let เพื่อแก้ lint(prefer-const)
           const phoneNum = trimmedInput.startsWith("0") ? "+66" + trimmedInput.slice(1) : trimmedInput;
           authCredentials = { phone: phoneNum, password: password };
         }
       } else {
-        // ล็อกอินด้วยอีเมลโดยตรง
         authCredentials = { email: trimmedInput.toLowerCase(), password: password };
       }
 
-      // ✅ ตัด as any ออก ส่ง authCredentials ได้ตรงๆ ทันที
       const { data, error } = await supabase.auth.signInWithPassword(authCredentials);
       if (error) throw error;
 
@@ -167,6 +162,7 @@ export default function LoginPage() {
       }
 
       window.dispatchEvent(new Event("profileUpdated"));
+      window.dispatchEvent(new Event("fridgeUpdated"));
       alert(`🎉 เข้าสู่ระบบสำเร็จ ยินดีต้อนรับคุณ ${userName}!`);
       router.push("/");
 
@@ -226,7 +222,7 @@ export default function LoginPage() {
 
       if (authError) throw authError;
 
-      // บันทึกโปรไฟล์พร้อมเบอร์และอีเมล
+      // บันทึกโปรไฟล์ลงตาราง profiles
       if (authDataRes.user) {
         const { error: profileError } = await supabase
           .from("profiles")
@@ -246,20 +242,35 @@ export default function LoginPage() {
         }
       }
 
-      alert(`✨ สมัครสมาชิกสำเร็จ! ยินดีต้อนรับคุณ ${name}`);
-
+      // 🧹 ล้างข้อมูลจำลองและแคชเก่าทั้งหมดในเครื่องทิ้ง 100% สำหรับบัญชีใหม่
+      localStorage.removeItem("myFridgeItems");
+      localStorage.removeItem("fridge");
+      localStorage.removeItem("nutrition_logs");
+      localStorage.removeItem("allergies");
+      localStorage.removeItem("diseases");
+      localStorage.removeItem("user_gender");
+      localStorage.removeItem("user_age");
+      localStorage.removeItem("user_weight");
+      localStorage.removeItem("user_height");
       localStorage.removeItem("userAge");
       localStorage.removeItem("userBMI");
       localStorage.removeItem("userBMIStatus");
       localStorage.removeItem("userTDEE");
       localStorage.removeItem("userBMR");
+      localStorage.removeItem("isAdmin");
+
+      // กำหนด flag ผู้ใช้ใหม่เพื่อป้องกันการดึงแคชรวม
+      localStorage.setItem(`isNewUser_${emailTrimmed}`, "true");
+      localStorage.setItem(`isNewUser_${phoneTrimmed}`, "true");
 
       sessionStorage.setItem("isLoggedIn", "true");
       sessionStorage.setItem("userEmail", emailTrimmed);
-      localStorage.removeItem("isAdmin");
       sessionStorage.setItem("mockUser", JSON.stringify({ name: name, contact: emailTrimmed }));
 
       window.dispatchEvent(new Event("profileUpdated"));
+      window.dispatchEvent(new Event("fridgeUpdated"));
+
+      alert(`✨ สมัครสมาชิกสำเร็จ! ยินดีต้อนรับคุณ ${name}`);
       router.push("/");
 
     } catch (err: unknown) {

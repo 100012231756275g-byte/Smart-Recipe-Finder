@@ -44,9 +44,11 @@ export default function RegisterPage() {
     setIsLoading(true);
 
     try {
+      const emailTrimmed = email.trim().toLowerCase();
+
       // 1. สร้างบัญชีผู้ใช้หลักใน auth.users ของ Supabase ด้วย Email
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: emailTrimmed,
         password: password,
       });
 
@@ -63,7 +65,7 @@ export default function RegisterPage() {
         return;
       }
 
-      // 2. บันทึกข้อมูลสุขภาพลงตาราง public.profiles โดยใช้ id (UUID) เดียวกัน
+      // 2. บันทึกข้อมูลสุขภาพลงตาราง public.profiles
       const { error: profileError } = await supabase.from("profiles").insert([
         {
           id: user.id,
@@ -79,6 +81,34 @@ export default function RegisterPage() {
         console.error("Profile creation error:", profileError);
       }
 
+      // 🧹 3. ล้างแคชและประวัติเก่าทั้งหมดในเครื่องทิ้ง 100% สำหรับผู้ใช้ใหม่
+      localStorage.removeItem("myFridgeItems");
+      localStorage.removeItem("fridge");
+      localStorage.removeItem("nutrition_logs");
+      localStorage.removeItem("allergies");
+      localStorage.removeItem("diseases");
+      localStorage.removeItem("user_gender");
+      localStorage.removeItem("user_age");
+      localStorage.removeItem("user_weight");
+      localStorage.removeItem("user_height");
+      localStorage.removeItem("userAge");
+      localStorage.removeItem("userBMI");
+      localStorage.removeItem("userBMIStatus");
+      localStorage.removeItem("userTDEE");
+      localStorage.removeItem("userBMR");
+      localStorage.removeItem("isAdmin");
+
+      // ล้าง Session ชั่วคราวของคนก่อนหน้า
+      sessionStorage.removeItem("isLoggedIn");
+      sessionStorage.removeItem("mockUser");
+      sessionStorage.removeItem("userEmail");
+
+      // กำหนด Flag บัญชีใหม่เพื่อไม่ให้หน้าประวัติไปดึงข้อมูลรวม
+      localStorage.setItem(`isNewUser_${emailTrimmed}`, "true");
+
+      window.dispatchEvent(new Event("profileUpdated"));
+      window.dispatchEvent(new Event("fridgeUpdated"));
+
       alert("✅ สมัครสมาชิกสำเร็จเรียบร้อย! กรุณาเข้าสู่ระบบ");
       router.push("/login");
     } catch (err) {
@@ -92,7 +122,6 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen bg-[#fcf9f6] flex items-center justify-center p-4 font-sans">
       <div className="bg-white w-full max-w-lg rounded-[2rem] shadow-sm border border-gray-100 p-6 sm:p-10 text-center">
-        
         <div className="w-16 h-16 bg-orange-100 text-[#f26522] rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4 font-bold">
           🥗
         </div>
@@ -109,8 +138,7 @@ export default function RegisterPage() {
         )}
 
         <form onSubmit={handleRegister} className="space-y-4 text-left">
-          
-          {/* ชื่อ-นามสกุล / ชื่อเล่น */}
+          {/* ชื่อ-นามสกุล */}
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">ชื่อของคุณ</label>
             <input
@@ -123,7 +151,7 @@ export default function RegisterPage() {
             />
           </div>
 
-          {/* อีเมล (สำคัญที่สุด: จะส่งไปเก็บใน auth.users) */}
+          {/* อีเมล */}
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">อีเมล (Email)</label>
             <input
@@ -162,7 +190,7 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          {/* ข้อมูลสุขภาพเสริมสำหรับ Profiles */}
+          {/* ข้อมูลสุขภาพเสริม */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">อายุ (ปี)</label>
@@ -201,7 +229,6 @@ export default function RegisterPage() {
             เข้าสู่ระบบที่นี่
           </Link>
         </div>
-
       </div>
     </div>
   );

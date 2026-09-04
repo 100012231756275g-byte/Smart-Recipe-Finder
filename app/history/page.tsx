@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 
-// 🌟 1. กำหนด Type ให้ชัดเจนทั้ง 2 ระบบ
+// 🌟 1. กำหนด Type ข้อมูลทั้ง 2 ระบบ
 type HistoryItem = {
   name: string;
   time?: string;
@@ -37,7 +37,7 @@ export default function HybridHistoryPage() {
   const [isUserLoggedIn, setIsUserLoggedIn] = useState(false);
   const [currentUserContact, setCurrentUserContact] = useState<string>("");
   
-  // 🌟 2. State ควบคุม Tabs และข้อมูลทั้ง 2 ก้อน
+  // 🌟 2. State ควบคุม Tabs และข้อมูล
   const [activeTab, setActiveTab] = useState<"diary" | "history">("diary");
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [diaryLogs, setDiaryLogs] = useState<NutritionLog[]>([]);
@@ -56,14 +56,26 @@ export default function HybridHistoryPage() {
           if (savedUser.contact) {
             setCurrentUserContact(savedUser.contact);
             
-            // 📥 ดึงข้อมูลประวัติการอ่านสูตร (History)
+            // 📥 1. ดึงประวัติเข้าชมสูตร (แยกเฉพาะของผู้ใช้นี้)
             const historyKey = `historyRecipes_${savedUser.contact}`;
             const savedHistory = localStorage.getItem(historyKey);
-            if (savedHistory) setHistoryItems(JSON.parse(savedHistory));
+            setHistoryItems(savedHistory ? JSON.parse(savedHistory) : []);
             
-            // 📥 ดึงข้อมูลสมุดบันทึกแคลอรี่ (Diary) จากที่สแกน AI
-            const savedLogs = localStorage.getItem("nutrition_logs");
-            if (savedLogs) setDiaryLogs(JSON.parse(savedLogs));
+            // 📥 2. ดึงสมุดจดแคลอรี่ (แยกเฉพาะของผู้ใช้นี้)
+            const userDiaryKey = `nutrition_logs_${savedUser.contact}`;
+            const savedUserLogs = localStorage.getItem(userDiaryKey);
+            
+            if (savedUserLogs) {
+              setDiaryLogs(JSON.parse(savedUserLogs));
+            } else {
+              // ถ้าเป็นบัญชีใหม่และยังไม่มีข้อมูลเฉพาะ ให้ตรวจสอบคีย์ทั่วไปก่อน
+              const legacyLogs = localStorage.getItem("nutrition_logs");
+              if (legacyLogs && !localStorage.getItem(`isNewUser_${savedUser.contact}`)) {
+                setDiaryLogs(JSON.parse(legacyLogs));
+              } else {
+                setDiaryLogs([]);
+              }
+            }
           }
         }
       }
@@ -78,7 +90,9 @@ export default function HybridHistoryPage() {
   const clearHistory = () => {
     if (confirm("ต้องการล้างประวัติการเข้าชมสูตรอาหารทั้งหมดใช่หรือไม่?")) {
       setHistoryItems([]);
-      if (currentUserContact) localStorage.removeItem(`historyRecipes_${currentUserContact}`);
+      if (currentUserContact) {
+        localStorage.removeItem(`historyRecipes_${currentUserContact}`);
+      }
     }
   };
 
@@ -86,21 +100,30 @@ export default function HybridHistoryPage() {
     if (confirm("⚠️ แน่ใจหรือไม่? ประวัติการกินและแคลอรี่ทั้งหมดจะถูกลบ!")) {
       setDiaryLogs([]);
       localStorage.removeItem("nutrition_logs");
+      if (currentUserContact) {
+        localStorage.removeItem(`nutrition_logs_${currentUserContact}`);
+      }
     }
   };
 
-  if (!isUserLoggedIn) return <div className="min-h-screen bg-gray-50 flex items-center justify-center font-bold text-gray-500">กรุณาเข้าสู่ระบบ</div>;
+  if (!isUserLoggedIn) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center font-bold text-gray-500">
+        กรุณาเข้าสู่ระบบ
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans pb-20">
 
-      {/* 🌟 Header กลาง */}
+      {/* Header */}
       <section className="bg-white py-10 border-b border-gray-100 text-center shadow-sm relative z-10">
         <h1 className="text-3xl md:text-4xl font-extrabold text-gray-900 flex items-center justify-center gap-3 mb-6">
           <span>📚</span> แดชบอร์ดสุขภาพของคุณ
         </h1>
         
-        {/* 🌟 ตัวสลับ Tab (Tab Switcher) */}
+        {/* Tab Switcher */}
         <div className="inline-flex bg-gray-100 p-1 rounded-2xl shadow-inner">
           <button 
             onClick={() => setActiveTab("diary")}
@@ -127,9 +150,7 @@ export default function HybridHistoryPage() {
 
       <main className="flex-grow w-full max-w-5xl mx-auto p-6 md:p-8">
         
-        {/* ========================================================
-            🔴 TAB 1: สมุดจดแคลอรี่ (DIARY) ดึงจากหน้า AI Scanner
-        ======================================================== */}
+        {/* TAB 1: สมุดจดแคลอรี่ (DIARY) */}
         {activeTab === "diary" && (
           <div className="animate-fade-in-up">
             <div className="flex justify-between items-center mb-6">
@@ -197,9 +218,7 @@ export default function HybridHistoryPage() {
           </div>
         )}
 
-        {/* ========================================================
-            🔵 TAB 2: ประวัติการเข้าชม (HISTORY) ของเก่า
-        ======================================================== */}
+        {/* TAB 2: ประวัติการเข้าชมสูตร (HISTORY) */}
         {activeTab === "history" && (
           <div className="animate-fade-in-up">
             <div className="flex justify-between items-center mb-6">
