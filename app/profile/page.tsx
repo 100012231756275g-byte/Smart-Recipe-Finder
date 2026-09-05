@@ -5,17 +5,11 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function ProfilePage() {
   const router = useRouter();
 
   const [isUserLoggedIn, setIsUserLoggedIn] = useState(false);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const defaultImage =
     "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=300&auto=format&fit=crop";
@@ -45,7 +39,7 @@ export default function ProfilePage() {
         }
       }
 
-      // 🌟 ดึงข้อมูลและคำนวณ BMI อัตโนมัติจาก user_weight และ user_height ใน health-profile
+      // 🌟 ดึงข้อมูลและคำนวณ BMI อัตโนมัติจาก user_weight และ user_height
       const savedWeight = localStorage.getItem("user_weight");
       const savedHeight = localStorage.getItem("user_height");
       const savedBMI = localStorage.getItem("userBMI");
@@ -85,41 +79,6 @@ export default function ProfilePage() {
     window.addEventListener("profileUpdated", loadUserData);
     return () => window.removeEventListener("profileUpdated", loadUserData);
   }, []);
-
-  // 🧹 ฟังก์ชันออกจากระบบแบบล้างแคชเกลี้ยง 100%
-  const handleLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (e) {
-      console.error("Sign out error:", e);
-    }
-
-    sessionStorage.removeItem("isLoggedIn");
-    sessionStorage.removeItem("mockUser");
-    sessionStorage.removeItem("userEmail");
-    document.cookie = "isAdmin=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
-
-    localStorage.removeItem("myFridgeItems");
-    localStorage.removeItem("fridge");
-    localStorage.removeItem("nutrition_logs");
-    localStorage.removeItem("allergies");
-    localStorage.removeItem("diseases");
-    localStorage.removeItem("user_gender");
-    localStorage.removeItem("user_age");
-    localStorage.removeItem("user_weight");
-    localStorage.removeItem("user_height");
-    localStorage.removeItem("userAge");
-    localStorage.removeItem("userBMI");
-    localStorage.removeItem("userBMIStatus");
-    localStorage.removeItem("userTDEE");
-    localStorage.removeItem("userBMR");
-    localStorage.removeItem("isAdmin");
-    localStorage.removeItem("profileImage");
-
-    window.dispatchEvent(new Event("profileUpdated"));
-    window.dispatchEvent(new Event("fridgeUpdated"));
-    router.push("/");
-  };
 
   if (!isUserLoggedIn) {
     return (
@@ -292,40 +251,7 @@ export default function ProfilePage() {
             )}
           </div>
         </div>
-
-        {/* ปุ่มออกจากระบบ (Logout Button) */}
-        <div className="mt-12 text-center">
-          <button
-            onClick={() => setShowLogoutConfirm(true)}
-            className="text-red-500 hover:text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 px-6 py-2.5 rounded-xl font-bold text-sm transition-colors cursor-pointer"
-          >
-            🚪 ออกจากระบบ
-          </button>
-        </div>
       </main>
-
-      {/* ป๊อปอัปยืนยัน Logout */}
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in p-4">
-          <div className="bg-white w-full max-w-xs rounded-[2rem] shadow-2xl py-6 px-6 relative text-center">
-            <p className="text-lg text-gray-800 font-bold mb-6 mt-2">ต้องการออกจากระบบ?</p>
-            <div className="flex gap-3 justify-center">
-              <button
-                onClick={() => setShowLogoutConfirm(false)}
-                className="flex-1 py-2.5 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
-              >
-                ยกเลิก
-              </button>
-              <button
-                onClick={handleLogout}
-                className="flex-1 py-2.5 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-xl transition-colors shadow-xs cursor-pointer"
-              >
-                ยืนยัน
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
