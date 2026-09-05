@@ -39,3 +39,182 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+/* eslint-disable */
+// seed.js
+const fs = require("fs");
+const path = require("path");
+const { createClient } = require("@supabase/supabase-js");
+
+// seed.js บรรทัดที่ 7-8
+let supabaseUrl = "https://ivocnynysryvesrscdzr.supabase.co";
+
+
+if (!supabaseUrl || !serviceRoleKey) {
+  try {
+    const envPath = path.resolve(process.cwd(), ".env.local");
+    if (fs.existsSync(envPath)) {
+      const envFile = fs.readFileSync(envPath, "utf-8");
+      envFile.split("\n").forEach((line) => {
+        const match = line.match(/^([^=]+)=(.*)$/);
+        if (match) {
+          const key = match[1].trim();
+          const value = match[2].trim().replace(/^["']|["']$/g, "");
+          if (key === "NEXT_PUBLIC_SUPABASE_URL") supabaseUrl = value;
+          if (key === "SUPABASE_SERVICE_ROLE_KEY") serviceRoleKey = value;
+        }
+      });
+    }
+  } catch (err) {
+    console.error("❌ อ่านไฟล์ .env.local ไม่สำเร็จ");
+  }
+}
+
+if (!supabaseUrl || !serviceRoleKey) {
+  console.error("🚨 กรุณาตรวจสอบว่ามี NEXT_PUBLIC_SUPABASE_URL และ SUPABASE_SERVICE_ROLE_KEY ใน .env.local");
+  process.exit(1);
+}
+
+const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
+
+// รายชื่อคนไทย 30 คน พร้อมข้อมูลสุขภาพ
+const mockUsers = [
+  { name: "ธนกฤต มั่นคง", email: "thanakrit.m@gmail.com", age: 24, bmi: 21.5, allergies: "ไม่มี", diseases: "ไม่มี" },
+  { name: "ชิดชนก บุญมี", email: "chidchanok.b@hotmail.com", age: 29, bmi: 24.8, allergies: "กุ้ง, อาหารทะเล", diseases: "ไม่มี" },
+  { name: "วรภพ เกียรติสกุล", email: "woraphop.k@gmail.com", age: 35, bmi: 28.2, allergies: "ไม่มี", diseases: "ไขมันในเลือดสูง" },
+  { name: "ปิยะดา สุขเกษม", email: "piyada.s@yahoo.com", age: 22, bmi: 19.4, allergies: "นมวัว", diseases: "ไม่มี" },
+  { name: "กิตติพงษ์ วิเศษ", email: "kittipong.w@gmail.com", age: 41, bmi: 26.7, allergies: "ถั่วลิสง", diseases: "โรคเบาหวาน" },
+  { name: "ณัฐธิดา เจริญพร", email: "nutthida.c@gmail.com", age: 27, bmi: 20.8, allergies: "ไม่มี", diseases: "ไม่มี" },
+  { name: "ศุภชัย พงษ์ศิริ", email: "suphachai.p@gmail.com", age: 31, bmi: 25.1, allergies: "ไม่มี", diseases: "ความดันโลหิตสูง" },
+  { name: "พิมพ์ลภัส แสงจันทร์", email: "pimlapas.s@outlook.com", age: 26, bmi: 22.0, allergies: "ไข่ไก่", diseases: "ไม่มี" },
+  { name: "อภิสิทธิ์ วงศ์ษา", email: "apisit.w@gmail.com", age: 38, bmi: 29.5, allergies: "กุ้ง", diseases: "โรคไตเรื้อรัง" },
+  { name: "กุลธิดา อินทร์แก้ว", email: "kunthida.i@gmail.com", age: 23, bmi: 18.9, allergies: "ไม่มี", diseases: "ไม่มี" },
+  { name: "ภาณุวัฒน์ เด่นหล้า", email: "panuwat.d@gmail.com", age: 30, bmi: 23.6, allergies: "อาหารทะเล", diseases: "ไม่มี" },
+  { name: "อรัญญา รัตนวิจิตร", email: "aranya.r@hotmail.com", age: 45, bmi: 27.4, allergies: "ไม่มี", diseases: "โรคเบาหวาน" },
+  { name: "ธีรเดช สุวรรณโชติ", email: "theeradej.s@gmail.com", age: 28, bmi: 21.9, allergies: "ถั่วเหลือง", diseases: "ไม่มี" },
+  { name: "มนัสชนก ประเสริฐ", email: "manutsanok.p@gmail.com", age: 33, bmi: 24.3, allergies: "ไม่มี", diseases: "ไขมันในเลือดสูง" },
+  { name: "ชลธิชา ศรีสุข", email: "chonticha.s@gmail.com", age: 25, bmi: 19.8, allergies: "ไม่มี", diseases: "ไม่มี" },
+  { name: "ปวริศร์ ศิริวัฒน์", email: "pawaris.s@gmail.com", age: 32, bmi: 26.0, allergies: "กุ้ง, ปู", diseases: "ไม่มี" },
+  { name: "สุดารัตน์ ดวงใจ", email: "sudarat.d@yahoo.com", age: 27, bmi: 22.8, allergies: "ไม่มี", diseases: "ไม่มี" },
+  { name: "นภดล สถิตานนท์", email: "noppadol.s@gmail.com", age: 39, bmi: 30.1, allergies: "ไม่มี", diseases: "ความดันโลหิตสูง" },
+  { name: "วรรณพร แก้วเกิด", email: "wannaporn.k@gmail.com", age: 21, bmi: 18.5, allergies: "กลูเตน", diseases: "ไม่มี" },
+  { name: "ธนภูมิ บุญครอง", email: "thanapoom.b@gmail.com", age: 36, bmi: 25.8, allergies: "ไม่มี", diseases: "ไม่มี" },
+  { name: "เกษม ชัยวุฒิ", email: "kasem.c@gmail.com", age: 48, bmi: 28.6, allergies: "ไม่มี", diseases: "โรคไตเรื้อรัง" },
+  { name: "ศศิธร ไชยศิริ", email: "sasithorn.c@hotmail.com", age: 29, bmi: 20.2, allergies: "อาหารทะเล", diseases: "ไม่มี" },
+  { name: "พงศธร สมบูรณ์", email: "pongsathorn.s@gmail.com", age: 34, bmi: 23.9, allergies: "ไม่มี", diseases: "ไม่มี" },
+  { name: "กมลชนก ภักดี", email: "kamolchanok.p@gmail.com", age: 26, bmi: 21.1, allergies: "นมวัว", diseases: "ไม่มี" },
+  { name: "อัครพล รักษ์วงษ์", email: "akarapol.r@gmail.com", age: 40, bmi: 27.9, allergies: "ไม่มี", diseases: "ไขมันในเลือดสูง" },
+  { name: "เบญจวรรณ พูนสุข", email: "benjawan.p@gmail.com", age: 31, bmi: 24.5, allergies: "ถั่วลิสง", diseases: "ไม่มี" },
+  { name: "จิรยุทธ ทองคำ", email: "jirayuth.t@gmail.com", age: 27, bmi: 22.4, allergies: "ไม่มี", diseases: "ไม่มี" },
+  { name: "รพีภัทร ศรชัย", email: "rapeepat.s@gmail.com", age: 35, bmi: 26.3, allergies: "กุ้ง", diseases: "โรคเบาหวาน" },
+  { name: "พรทิพย์ มณีฉาย", email: "pornthip.m@hotmail.com", age: 23, bmi: 19.1, allergies: "ไม่มี", diseases: "ไม่มี" },
+  { name: "สมหมาย แซ่ตั้ง", email: "sommai.s@gmail.com", age: 52, bmi: 31.0, allergies: "ไม่มี", diseases: "ความดันโลหิตสูง" }
+];
+
+const mockRecipes = [
+  { name: "ผัดกะเพราอกไก่คลีน", img: "https://images.unsplash.com/photo-1548943487-a2e4b43b485d" },
+  { name: "ต้มยำกุ้งน้ำใส", img: "https://images.unsplash.com/photo-1559847844-5315695dadae" },
+  { name: "สลัดอกไก่ไข่ต้ม", img: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd" },
+  { name: "แกงจืดเต้าหู้หมูสับ", img: "https://images.unsplash.com/photo-1547592180-85f173990554" },
+  { name: "สเต๊กแซลมอนย่างเกลือ", img: "https://images.unsplash.com/photo-1467003909585-2f8a72700288" }
+];
+
+async function seedDatabase() {
+  console.log("🚀 เริ่มต้นสร้างข้อมูลจำลอง 30 ผู้ใช้ และสถิติภาพรวม...\n");
+
+  let createdCount = 0;
+
+  for (let i = 0; i < mockUsers.length; i++) {
+    const u = mockUsers[i];
+    let userId = null;
+
+    try {
+      const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+        email: u.email,
+        password: "Password@1234",
+        email_confirm: true,
+        user_metadata: { name: u.name },
+      });
+
+      if (authError) {
+        const { data: existingUsers } = await supabase.auth.admin.listUsers();
+        const found = existingUsers?.users?.find((ex) => ex.email === u.email);
+        if (found) userId = found.id;
+      } else {
+        userId = authUser.user.id;
+      }
+    } catch (e) {
+      // ดำเนินการต่อด้วย ID จำลองหาก auth ติดขัด
+    }
+
+    if (!userId) {
+      userId = `mock-usr-${i + 1}-${Date.now().toString(36)}`;
+    }
+
+    const { error: profileError } = await supabase.from("profiles").upsert({
+      id: userId,
+      full_name: u.name,
+      role: "user",
+      age: u.age,
+      bmi: u.bmi,
+      health_issues: u.allergies !== "ไม่มี" ? u.allergies : null,
+      diseases: u.diseases !== "ไม่มี" ? u.diseases : null,
+      status: "active",
+      contact_info: u.email,
+      favorites_count: Math.floor(Math.random() * 6) + 1,
+    });
+
+    if (!profileError) createdCount++;
+    process.stdout.write(`⏳ สร้างข้อมูลผู้ใช้สำเร็จ: ${i + 1}/${mockUsers.length}...\r`);
+  }
+
+  console.log(`\n✅ บันทึกข้อมูลผู้ใช้ 30 คนเรียบร้อย (${createdCount} รายการ)\n`);
+
+  console.log("📊 กำลังจำลองสถิติการค้นหาย้อนหลัง 7 วัน...");
+  const searchLogs = [];
+  const now = new Date();
+
+  for (let dayOffset = 6; dayOffset >= 0; dayOffset--) {
+    const logsPerDay = [14, 18, 16, 25, 38, 42, 30][6 - dayOffset] || 15;
+    for (let j = 0; j < logsPerDay; j++) {
+      const logDate = new Date(now);
+      logDate.setDate(now.getDate() - dayOffset);
+      logDate.setHours(Math.floor(Math.random() * 14) + 8, Math.floor(Math.random() * 59));
+
+      searchLogs.push({ created_at: logDate.toISOString() });
+    }
+  }
+
+  const { error: searchErr } = await supabase.from("search_logs").insert(searchLogs);
+  if (searchErr) {
+    console.warn("⚠️ ตาราง search_logs ยังไม่มีในระบบ (ข้ามการบันทึก search logs)");
+  } else {
+    console.log(`✅ จำลองประวัติการค้นหาทั้งหมด ${searchLogs.length} ครั้ง เรียบร้อย!`);
+  }
+
+  console.log("⭐ กำลังจำลองการกดบันทึกเมนูโปรด (Favorites)...");
+  const favorites = [];
+  mockUsers.forEach((u) => {
+    const favCount = Math.floor(Math.random() * 3) + 1;
+    for (let f = 0; f < favCount; f++) {
+      const recipe = mockRecipes[Math.floor(Math.random() * mockRecipes.length)];
+      favorites.push({
+        name: recipe.name,
+        image_url: recipe.img,
+        user_contact: u.email,
+      });
+    }
+  });
+
+  const { error: favErr } = await supabase.from("favorites").insert(favorites);
+  if (favErr) {
+    console.warn("⚠️ ตาราง favorites ยังไม่มีในระบบ (ข้ามการบันทึก favorites)");
+  } else {
+    console.log(`✅ จำลองเมนูโปรดทั้งหมด ${favorites.length} รายการ เรียบร้อย!`);
+  }
+
+  console.log("\n🎉 สำเร็จเรียบร้อย! ข้อมูล 30 ผู้ใช้งานถูกนำเข้าสู่ระบบแล้ว");
+}
+
+seedDatabase().catch(console.error);

@@ -4,60 +4,68 @@ import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
-interface UserProfile {
+interface ProfileRecord {
   id: string;
-  name?: string;
-  bmi?: string;
-  diseases?: string;
-  favorites_count?: number;
+  full_name: string | null;
+  email: string | null;
+  role: string | null;
+  age: number | null;
+  bmi: number | null;
+  health_issues: string | null;
+  diseases: string | null;
+  status: string | null;
+  favorites_count: number | null;
 }
 
 export async function GET() {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
-    if (!supabaseUrl || !supabaseServiceKey) {
+    if (!supabaseUrl || !supabaseKey) {
       return NextResponse.json(
-        { error: "ยังไม่ได้ตั้งค่า SUPABASE_SERVICE_ROLE_KEY ใน Environment Variables" },
+        { error: "ยังไม่ได้กำหนด SUPABASE_URL หรือ KEY" },
         { status: 500 }
       );
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // 1. ดึงรายชื่อผู้ใช้จากระบบ Auth
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.listUsers();
-    if (authError) throw authError;
-
-    // 2. ดึงข้อมูลโปรไฟล์และสุขภาพ
-    const { data: profileData, error: profileError } = await supabaseAdmin
+    // 🌟 1. ดึงข้อมูลตรงจากตาราง profiles ที่เราเพิ่งยิง 30 คนเข้าไป
+    const { data: profileData, error: profileError } = await supabase
       .from("profiles")
-      .select("*");
+      .select("*")
+      .order("created_at", { ascending: false });
 
-    if (profileError && profileError.code !== "PGRST116") {
-      console.warn("Profiles fetch warning:", profileError.message);
-    }
+    if (profileError) throw profileError;
 
-    const profiles = (profileData as UserProfile[]) || [];
+    const profiles = (profileData as ProfileRecord[]) || [];
 
-    // 3. รวมข้อมูลเข้าด้วยกัน
-    const mergedUsers = (authData?.users || []).map((user) => {
-      const profile = profiles.find((p) => p.id === user.id);
-      const userMeta = user.user_metadata as { name?: string } | undefined;
+    // 🌟 2. ดึงข้อมูล favorites มานับยอดกดไลก์
+    const { data: favData } = await supabase.from("favorites").select("user_contact");
+
+    // 🌟 3. ประกอบข้อมูลส่งให้หน้าบ้าน
+    const formattedUsers = profiles.map((p) => {
+      const email = p.email || "user@cookcook.com";
+      const favCount = favData
+        ? favData.filter((f) => f.user_contact === email || f.user_contact === p.full_name).length
+        : (p.favorites_count || 0);
 
       return {
-        id: user.id,
-        email: user.email || "ไม่มีอีเมล",
-        name: profile?.name || userMeta?.name || "ไม่ระบุชื่อ",
-        bmi: profile?.bmi || "-",
-        healthIssues: profile?.diseases || "ไม่มี",
-        favoritesCount: profile?.favorites_count || 0,
-        status: user.banned_until ? "ระงับการใช้งาน" : "ปกติ",
+        id: p.id,
+        email: email,
+        name: p.full_name || "ไม่ระบุชื่อ",
+        age: p.age ? String(p.age) : "-",
+        bmi: p.bmi ? String(p.bmi) : "-",
+        healthIssues: p.health_issues || "ไม่มี",
+        diseases: p.diseases || "ไม่มี",
+        favoritesCount: favCount,
+        role: p.role === "Admin" ? "Admin" : "User",
+        status: p.status === "banned" ? "ระงับการใช้งาน" : "ปกติ",
       };
     });
 
-    return NextResponse.json(mergedUsers);
+    return NextResponse.json(formattedUsers);
   } catch (error) {
     const message = error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการดึงข้อมูลผู้ใช้";
     return NextResponse.json({ error: message }, { status: 500 });
