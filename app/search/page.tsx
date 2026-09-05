@@ -1,18 +1,18 @@
 // app/search/page.tsx
 "use client";
 
-import { useState, useEffect, useMemo, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import ExpiringBanner from "../components/ExpiringBanner"; // 🌟 ดึงแบนเนอร์แจ้งเตือนวัตถุดิบ
+import ExpiringBanner from "../components/ExpiringBanner";
 
 // --- Types ---
 interface Recipe {
   id: string | number;
   name: string;
   image?: string;
-  kcal: string;
+  kcal: string | number;
   time: string;
-  ingredients: string[];
+  ingredients: string[] | string;
 }
 
 // 🌟 รายการเป้าหมายโภชนาการ
@@ -25,7 +25,7 @@ const healthGoals = [
 ];
 
 // =========================================================================
-// 📚 DICTIONARIES สำหรับระบบ STRICT FILTERING (ห้ามแก้ไขคำให้หย่อนยาน)
+// 📚 DICTIONARIES สำหรับระบบ STRICT FILTERING
 // =========================================================================
 
 const ANIMAL_ITEMS = [
@@ -52,11 +52,21 @@ const CLEAN_PROTEIN_SOURCES = [
   "ปลากะพง", "ไข่ไก่", "ไข่ขาว", "ไข่", "กุ้ง", "เต้าหู้", "สันในหมู", "หมูเนื้อแดง"
 ];
 
+// 🌟 ปรับปรุงกฎของโรคให้ครอบคลุมทั้งคำที่มีและไม่มี "โรค" นำหน้า
 const DISEASE_RULES: Record<string, string[]> = {
   "เบาหวาน": ["น้ำตาล", "น้ำเชื่อม", "นมข้น", "หวาน", "น้ำตาลปี๊บ", "น้ำผึ้ง"],
   "ความดันโลหิตสูง": ["น้ำปลา", "เกลือ", "ซีอิ๊ว", "ซอสปรุงรส", "กะปิ", "ปลาร้า", "ผงชูรส"],
   "ไตเรื้อรัง": ["น้ำปลา", "เกลือ", "ผงชูรส", "กะปิ", "ซีอิ๊ว", "ปลาร้า"],
-  "ไขมันในเลือดสูง": ["กะทิ", "หมูสามชั้น", "เนย", "น้ำมันพืช", "ของทอด", "หมูกรอบ", "แคบหมู"]
+  "ไต": ["น้ำปลา", "เกลือ", "ผงชูรส", "กะปิ", "ซีอิ๊ว", "ปลาร้า"],
+  "ไขมันในเลือดสูง": ["กะทิ", "หมูสามชั้น", "เนย", "น้ำมันพืช", "ของทอด", "หมูกรอบ", "แคบหมู"],
+  "เกาต์": ["เครื่องใน", "ตับ", "ไต", "ไก่", "เป็ด", "สัตว์ปีก", "ยอดผัก", "ชะอม", "กระถิน"]
+};
+
+// ฟังก์ชันแปลงวัตถุดิบให้เป็น String ป้องกัน Error กรณีข้อมูลมาเป็นก้อนข้อความ
+const extractIngredientsString = (ingredients: unknown): string => {
+  if (Array.isArray(ingredients)) return ingredients.join(" ");
+  if (typeof ingredients === "string") return ingredients;
+  return "";
 };
 
 function SearchComponent() {
@@ -74,15 +84,15 @@ function SearchComponent() {
   const [userAllergies, setUserAllergies] = useState<string[]>([]);
   const [userDiseases, setUserDiseases] = useState<string[]>([]);
 
-  // ✅ วิธีมาตรฐาน React: Sync ค่าระหว่าง Render ป้องกัน Cascading Render
   const [prevQueryParam, setPrevQueryParam] = useState(queryParam);
   if (queryParam !== prevQueryParam) {
     setPrevQueryParam(queryParam);
     setSearchQuery(queryParam);
   }
 
-  const calculateMacros = (kcalString: string, goal: string) => {
-    const kcal = parseInt(kcalString.replace(/\D/g, "")) || 350;
+  const calculateMacros = (kcalValue: string | number, goal: string) => {
+    const rawKcal = typeof kcalValue === "number" ? kcalValue : parseInt(String(kcalValue).replace(/\D/g, "") || "350");
+    const kcal = rawKcal > 0 ? rawKcal : 350;
     let p = 0, c = 0, f = 0;
 
     if (goal === "muscle") {
@@ -105,22 +115,36 @@ function SearchComponent() {
     return { p, c, f };
   };
 
+  // 🌟 ฟังก์ชันโหลดข้อมูลสุขภาพ (ดักอ่านคีย์ทุกรูปแบบ)
+  const loadUserData = useCallback(() => {
+    const savedDiet = localStorage.getItem("dietaryPreference");
+    if (savedDiet) setUserDietPreference(savedDiet);
+
+    const savedAllergies =
+      localStorage.getItem("allergies") ||
+      localStorage.getItem("user_allergies") ||
+      localStorage.getItem("userAllergies");
+    if (savedAllergies) {
+      setUserAllergies(savedAllergies.split(",").map((a) => a.trim().toLowerCase()).filter(Boolean));
+    } else {
+      setUserAllergies([]);
+    }
+
+    const savedDiseases =
+      localStorage.getItem("diseases") ||
+      localStorage.getItem("user_diseases") ||
+      localStorage.getItem("userDiseases");
+    if (savedDiseases) {
+      setUserDiseases(savedDiseases.split(",").map((d) => d.trim()).filter(Boolean));
+    } else {
+      setUserDiseases([]);
+    }
+  }, []);
+
   useEffect(() => {
     const loadInitialData = async () => {
       setIsLoading(true);
-
-      const savedDiet = localStorage.getItem("dietaryPreference");
-      if (savedDiet) setUserDietPreference(savedDiet);
-
-      const savedAllergies = localStorage.getItem("allergies");
-      if (savedAllergies) {
-        setUserAllergies(savedAllergies.split(",").map(a => a.trim().toLowerCase()).filter(Boolean));
-      }
-
-      const savedDiseases = localStorage.getItem("diseases");
-      if (savedDiseases) {
-        setUserDiseases(savedDiseases.split(",").map(d => d.trim()).filter(Boolean));
-      }
+      loadUserData();
 
       try {
         const res = await fetch('/api/recipes?t=' + new Date().getTime(), { cache: 'no-store' });
@@ -134,8 +158,13 @@ function SearchComponent() {
         setIsLoading(false);
       }
     };
+
     loadInitialData();
-  }, []);
+
+    // 🌟 ดักฟังการอัปเดตข้อมูลแบบ Real-time ข้ามหน้า
+    window.addEventListener("profileUpdated", loadUserData);
+    return () => window.removeEventListener("profileUpdated", loadUserData);
+  }, [loadUserData]);
 
   // 🧠 ใช้ useMemo คำนวณ Derived State แบบ Pure Component
   const filteredRecipes = useMemo(() => {
@@ -147,76 +176,86 @@ function SearchComponent() {
       const searchTokens = query.split(/\s+/).filter(Boolean);
       result = result.filter((recipe) => {
         const nameLower = (recipe.name || "").toLowerCase();
-        const ingredientsText = (recipe.ingredients || []).join(" ").toLowerCase();
+        const ingredientsText = extractIngredientsString(recipe.ingredients).toLowerCase();
         return searchTokens.every((token) => 
           nameLower.includes(token) || ingredientsText.includes(token)
         );
       });
     }
 
-    // --- ด่านที่ 1: ตรวจสอบความเข้ากันได้กับโปรไฟล์ส่วนตัว (Dietary & Allergies) ---
+    // --- ด่านที่ 1: ตรวจสอบของแพ้ (Allergies) ตัดทิ้งแบบเข้มงวด 100% ---
     if (userAllergies.length > 0) {
-      result = result.filter(recipe => {
-        const text = (recipe.name + " " + (recipe.ingredients || []).join(" ")).toLowerCase();
-        return !userAllergies.some(allergy => text.includes(allergy));
+      result = result.filter((recipe) => {
+        const fullRecipeText = (
+          (recipe.name || "") + " " + extractIngredientsString(recipe.ingredients)
+        ).toLowerCase();
+        return !userAllergies.some((allergy) => fullRecipeText.includes(allergy));
       });
     }
 
+    // --- ด่านที่ 2: ตรวจสอบรูปแบบการทานอาหาร (Diet) ---
     if (userDietPreference && userDietPreference !== "ทั่วไป") {
-      result = result.filter(recipe => {
-        const text = (recipe.name + " " + (recipe.ingredients || []).join(" ")).toLowerCase();
+      result = result.filter((recipe) => {
+        const fullRecipeText = (
+          (recipe.name || "") + " " + extractIngredientsString(recipe.ingredients)
+        ).toLowerCase();
+
         if (userDietPreference.includes("มังสวิรัติ") || userDietPreference.includes("แพลนท์เบส")) {
-          return !ANIMAL_ITEMS.some(item => text.includes(item));
+          return !ANIMAL_ITEMS.some((item) => fullRecipeText.includes(item));
         }
         if (userDietPreference === "เจ") {
           const J_FORBIDDEN = [...ANIMAL_ITEMS, "กระเทียม", "หัวหอม", "หอมแดง", "ต้นหอม", "กุยช่าย", "ใบยาสูบ"];
-          return !J_FORBIDDEN.some(item => text.includes(item));
+          return !J_FORBIDDEN.some((item) => fullRecipeText.includes(item));
         }
         if (userDietPreference.includes("คีโต")) {
-          return !KETO_CARBS_SUGARS.some(carb => text.includes(carb));
+          return !KETO_CARBS_SUGARS.some((carb) => fullRecipeText.includes(carb));
         }
         if (userDietPreference.includes("ฮาลาล")) {
           const HARAM_ITEMS = ["หมู", "เลือด", "เหล้า", "ไวน์", "เบียร์", "มิริน", "กุนเชียง", "เบคอน", "สามชั้น"];
-          return !HARAM_ITEMS.some(haram => text.includes(haram));
+          return !HARAM_ITEMS.some((haram) => fullRecipeText.includes(haram));
         }
         return true;
       });
     }
 
-    // --- ด่านที่ 2: ระบบ STRICT FILTERING ตาม 5 หมวดเป้าหมาย ---
-    result = result.filter(recipe => {
-      const kcal = parseInt(recipe.kcal.replace(/\D/g, "")) || 0;
-      const text = (recipe.name + " " + (recipe.ingredients || []).join(" ")).toLowerCase();
+    // --- ด่านที่ 3: ระบบ STRICT FILTERING ตาม 5 หมวดเป้าหมาย + โรคประจำตัว ---
+    result = result.filter((recipe) => {
+      const rawKcal = typeof recipe.kcal === "number" ? recipe.kcal : parseInt(String(recipe.kcal || "").replace(/\D/g, "") || "0");
+      const fullRecipeText = (
+        (recipe.name || "") + " " + extractIngredientsString(recipe.ingredients)
+      ).toLowerCase();
 
       switch (activeGoal) {
         case "plant":
-          return !ANIMAL_ITEMS.some(animal => text.includes(animal));
+          return !ANIMAL_ITEMS.some((animal) => fullRecipeText.includes(animal));
 
         case "keto":
-          return !KETO_CARBS_SUGARS.some(carb => text.includes(carb));
+          return !KETO_CARBS_SUGARS.some((carb) => fullRecipeText.includes(carb));
 
         case "fat-loss": {
-          const isLowCal = kcal > 0 && kcal <= 350;
-          const hasNoBadFat = !FAT_LOSS_BAD_ITEMS.some(badItem => text.includes(badItem));
+          const isLowCal = rawKcal > 0 && rawKcal <= 350;
+          const hasNoBadFat = !FAT_LOSS_BAD_ITEMS.some((badItem) => fullRecipeText.includes(badItem));
           return isLowCal && hasNoBadFat;
         }
 
         case "muscle": {
-          const hasCleanProtein = CLEAN_PROTEIN_SOURCES.some(p => text.includes(p));
-          const hasSufficientKcal = kcal >= 280;
-          const notJustJunk = !["แคบหมู", "แหนม", "หมูกรอบ"].some(j => text.includes(j) && !text.includes("อกไก่"));
+          const hasCleanProtein = CLEAN_PROTEIN_SOURCES.some((p) => fullRecipeText.includes(p));
+          const hasSufficientKcal = rawKcal >= 280;
+          const notJustJunk = !["แคบหมู", "แหนม", "หมูกรอบ"].some((j) => fullRecipeText.includes(j) && !fullRecipeText.includes("อกไก่"));
           return hasCleanProtein && hasSufficientKcal && notJustJunk;
         }
 
         case "all":
         default: {
+          // 🌟 ตรวจสอบกฎโรคประจำตัว (ตัดคำว่า "โรค" ออกก่อนเทียบ เพื่อความแม่นยำ 100%)
           for (const disease of userDiseases) {
-            const forbidden = DISEASE_RULES[disease] || [];
-            if (forbidden.some(risk => text.includes(risk))) {
+            const cleanKey = disease.replace(/^โรค/, "").trim();
+            const forbidden = DISEASE_RULES[cleanKey] || DISEASE_RULES[disease] || [];
+            if (forbidden.some((risk) => fullRecipeText.includes(risk))) {
               return false;
             }
           }
-          if (kcal > 0 && (kcal < 200 || kcal > 550)) return false;
+          if (rawKcal > 0 && (rawKcal < 150 || rawKcal > 600)) return false;
           return true;
         }
       }
@@ -227,19 +266,29 @@ function SearchComponent() {
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] font-sans pb-24">
-      {/* 🌟 1. แบนเนอร์เตือนวัตถุดิบหมดอายุ + เร่งค้นหาเมนู */}
+      {/* 🌟 1. แบนเนอร์เตือนวัตถุดิบหมดอายุ */}
       <ExpiringBanner />
 
       {/* 🌟 2. ส่วน Header โภชนาการ */}
       <div className="bg-white border-b border-gray-100 pt-8 sm:pt-14 pb-8 sm:pb-12 px-4 shadow-[0_10px_30px_rgb(0,0,0,0.02)] relative overflow-hidden">
         <div className="max-w-3xl mx-auto text-center relative z-10">
           
-          <div className="inline-flex items-center gap-1.5 sm:gap-2 bg-orange-50 text-orange-600 px-3.5 py-1 sm:px-4 sm:py-1.5 rounded-full font-bold text-xs sm:text-sm mb-4 sm:mb-6 border border-orange-100">
+          <div className="inline-flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 bg-orange-50 text-orange-600 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full font-bold text-xs sm:text-sm mb-4 sm:mb-6 border border-orange-100">
             <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
             Smart Nutrition AI (Strict Mode 🔒)
             {userDietPreference !== "ทั่วไป" && (
-              <span className="ml-1 px-1.5 py-0.5 bg-orange-200 text-orange-800 rounded text-[9px] uppercase">
+              <span className="px-1.5 py-0.5 bg-orange-200 text-orange-800 rounded text-[10px] uppercase">
                 {userDietPreference}
+              </span>
+            )}
+            {userAllergies.length > 0 && (
+              <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[10px] font-bold">
+                🚫 ไม่ทาน: {userAllergies.join(", ")}
+              </span>
+            )}
+            {userDiseases.length > 0 && (
+              <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-[10px] font-bold">
+                🛡️ เลี่ยงโรค: {userDiseases.join(", ")}
               </span>
             )}
           </div>
@@ -251,7 +300,7 @@ function SearchComponent() {
             </span>
           </h1>
 
-          {/* 🔍 ช่องค้นหาอัจฉริยะในหน้าค้นหา */}
+          {/* 🔍 ช่องค้นหาอัจฉริยะ */}
           <div className="max-w-xl mx-auto mb-6 sm:mb-8 relative">
             <div className="relative flex items-center">
               <span className="absolute left-4 text-gray-400 text-base sm:text-lg">🔍</span>
@@ -266,7 +315,7 @@ function SearchComponent() {
                 <button
                   type="button"
                   onClick={() => setSearchQuery("")}
-                  className="absolute right-3 w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-600 flex items-center justify-center text-[10px] font-bold"
+                  className="absolute right-3 w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-600 flex items-center justify-center text-[10px] font-bold cursor-pointer"
                 >
                   ✕
                 </button>
@@ -280,7 +329,7 @@ function SearchComponent() {
               <button
                 key={goal.id}
                 onClick={() => setActiveGoal(goal.id)}
-                className={`px-3 py-2 sm:px-5 sm:py-3 rounded-xl sm:rounded-2xl font-bold text-xs sm:text-sm transition-all duration-200 flex items-center gap-1.5 sm:gap-2 ${
+                className={`px-3 py-2 sm:px-5 sm:py-3 rounded-xl sm:rounded-2xl font-bold text-xs sm:text-sm transition-all duration-200 flex items-center gap-1.5 sm:gap-2 cursor-pointer ${
                   activeGoal === goal.id 
                     ? "bg-gray-900 text-white shadow-md scale-105" 
                     : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
@@ -324,14 +373,14 @@ function SearchComponent() {
                 <div 
                   key={recipe.id}
                   onClick={() => router.push(`/recipe/${encodeURIComponent(recipe.name)}`)}
-                  className="bg-white rounded-2xl sm:rounded-[2rem] p-4 sm:p-5 shadow-sm border border-gray-100 cursor-pointer hover:-translate-y-1 sm:hover:-translate-y-2 hover:shadow-xl transition-all duration-300 group flex flex-col h-full"
+                  className="bg-white rounded-2xl sm:rounded-[2rem] p-4 sm:p-5 shadow-xs border border-gray-100 cursor-pointer hover:-translate-y-1 sm:hover:-translate-y-2 hover:shadow-xl transition-all duration-300 group flex flex-col h-full"
                 >
                   <div className="flex justify-between items-start mb-3 sm:mb-4">
                     <h3 className="text-base sm:text-xl font-extrabold text-gray-900 group-hover:text-[#f26522] transition-colors line-clamp-1 pr-2 leading-tight">
                       {recipe.name}
                     </h3>
                     <div className="bg-orange-50 text-[#f26522] font-extrabold text-xs sm:text-sm px-2.5 py-1 rounded-xl whitespace-nowrap">
-                      {recipe.kcal}
+                      {typeof recipe.kcal === "number" ? `${recipe.kcal} kcal` : recipe.kcal}
                     </div>
                   </div>
                   
@@ -364,15 +413,15 @@ function SearchComponent() {
             })}
           </div>
         ) : (
-          <div className="bg-white rounded-3xl p-8 sm:p-12 text-center shadow-sm border border-dashed border-gray-200 max-w-xl mx-auto mt-6">
-            <span className="text-5xl sm:text-6xl block mb-4">🔍</span>
+          <div className="bg-white rounded-3xl p-8 sm:p-12 text-center shadow-xs border border-dashed border-gray-200 max-w-xl mx-auto mt-6">
+            <span className="text-5xl sm:text-6xl block mb-4">🛡️</span>
             <h3 className="text-xl sm:text-2xl font-extrabold text-gray-800 mb-2">ไม่พบเมนูที่ผ่านเกณฑ์ความปลอดภัย</h3>
             <p className="text-gray-500 text-xs sm:text-sm max-w-md mx-auto mb-6 leading-relaxed">
-              เมนูอาจมีวัตถุดิบที่ไม่ผ่านเกณฑ์ความเข้มงวดของหมวดหมู่นี้ หรือขัดกับประวัติโรคประจำตัวและการแพ้อาหารของคุณ
+              เมนูอาจมีวัตถุดิบที่ไม่ผ่านเกณฑ์ความเข้มงวด หรือขัดกับประวัติโรคประจำตัว ({userDiseases.join(", ") || "ไม่มี"}) และของที่คุณแพ้ ({userAllergies.join(", ") || "ไม่มี"})
             </p>
             <button 
               onClick={() => { setSearchQuery(""); setActiveGoal("all"); }}
-              className="bg-gray-900 hover:bg-gray-800 text-white font-bold px-6 py-2.5 sm:px-8 sm:py-3 rounded-full transition-transform active:scale-95 text-xs sm:text-sm shadow-md"
+              className="bg-gray-900 hover:bg-gray-800 text-white font-bold px-6 py-2.5 sm:px-8 sm:py-3 rounded-full transition-transform active:scale-95 text-xs sm:text-sm shadow-md cursor-pointer"
             >
               รีเซ็ตตัวกรองทั้งหมด
             </button>
