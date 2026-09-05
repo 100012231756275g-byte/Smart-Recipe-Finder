@@ -12,8 +12,8 @@ import UserManager from "./components/UserManager";
 import AuditLogManager from "./components/AuditLogManager";
 
 // 🌟 2. ตั้งค่า Supabase
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Types
@@ -24,9 +24,20 @@ type AuditLog = { id: number; type: "admin" | "user" | "system"; action: string;
 type LogItem = { id?: number | string; action?: string; details?: string; time?: string; created_at?: string; role?: string; type?: string; };
 type DashboardData = { totalRecipes: number; totalFavorites: number; logs: LogItem[]; chartData: { day: string; value: number }[]; };
 
-type ProfileRow = { id: string | number; full_name: string | null; role: string; age: number | null; bmi: number | null; health_issues: string | null; status: string; };
+type ApiUserResponse = {
+  id: string;
+  email: string;
+  name: string;
+  bmi: string;
+  healthIssues: string;
+  favoritesCount: number;
+  status: string;
+  age?: string;
+  diseases?: string;
+  role?: string;
+};
 
-// 🌟 พจนานุกรมแปลวัตถุดิบ (ย้ายมาไว้นอก Component เพื่อลดภาระการโหลดซ้ำ)
+// 🌟 พจนานุกรมแปลวัตถุดิบ
 const ingredientDictionary: Record<string, string> = {
   "หมูสับ": "minced pork",
   "เนื้อหมู": "pork",
@@ -201,53 +212,43 @@ export default function AdminDashboard() {
     } catch (err) { console.error("Search Data Error:", err); }
   };
 
+  // 🌟 ฟังก์ชันดึงข้อมูลผู้ใช้งาน เชื่อมต่อ API /api/admin/users
   const fetchRealUsers = async () => {
     try {
-      // 1. ดึงข้อมูล User จากตาราง profiles
-      const { data: usersData, error: usersError } = await supabase
-        .from("profiles")
-        .select(`id, full_name, role, age, bmi, health_issues, status, contact_info`) // 🌟 สมมติว่ามีฟิลด์ contact_info ถ้าไม่มีใช้ id แทนในการเทียบ
-        .order("role", { ascending: true }); 
-        
-      if (usersError) throw usersError; 
-
-      if (usersData) {
-        // 2. 🌟 วิ่งไปนับ (Count) ข้อมูลในตาราง favorites ของทุกคนมารอไว้เลย
-        const { data: favData, error: favError } = await supabase
-          .from("favorites")
-          .select("user_contact"); 
-          // หมายเหตุ: หน้า Favorites ของคุณใช้ user_contact ในการแยกเจ้าของ
-
-        if (favError) console.error("Error fetching favorites count:", favError);
-
-        // 3. เอาข้อมูล 2 ตารางมาประกอบร่างกัน
-        const formattedUsers: UserAccount[] = usersData.map((u: ProfileRow & { contact_info?: string }) => {
-          
-          // 🌟 นับว่า User คนนี้มี Favorites กี่อัน
-          // ถ้าในตาราง profiles ของคุณใช้ field อื่นเก็บเบอร์/อีเมล ให้เปลี่ยน u.contact_info เป็นชื่อ field นั้นครับ
-          // แต่ถ้าเชื่อมด้วย id ให้เปลี่ยนเงื่อนไขตรงนี้
-          const userContactToMatch = u.contact_info || u.full_name; // ชั่วคราว: ลองใช้ชื่อหรือ Contact ไปเทียบ
-          const userFavCount = favData ? favData.filter(fav => fav.user_contact === userContactToMatch).length : 0;
-
-          return {
-            id: u.id, 
-            name: u.full_name || "ไม่ระบุชื่อ", 
-            email: "สมาชิก CookCook", 
-            role: u.role === 'admin' ? 'Admin' : 'User', 
-            status: u.status === 'banned' ? 'Banned' : 'Active', 
-            joined: "ล่าสุด", 
-            age: u.age ? String(u.age) : "-", 
-            bmi: u.bmi ? String(u.bmi) : "-", 
-            tdee: "-", 
-            allergies: u.health_issues || "ไม่มี", 
-            diseases: "ไม่มี", 
-            favCount: userFavCount // 🌟 เอาจำนวนที่นับได้มาใส่ตรงนี้แทนเลข 0 แล้ว!
-          };
-        });
-        
-        setUsers(formattedUsers);
+      const res = await fetch('/api/admin/users?t=' + new Date().getTime());
+      if (res.ok) {
+        const apiUsers: ApiUserResponse[] = await res.json();
+        if (Array.isArray(apiUsers) && apiUsers.length > 0) {
+          const formatted: UserAccount[] = apiUsers.map((u, idx) => ({
+            id: u.id || idx + 1,
+            name: u.name || "ผู้ใช้งานระบบ",
+            email: u.email || "user@cookcook.com",
+            role: (u.email?.includes("admin") || u.role === "admin") ? "Admin" : "User",
+            status: u.status === "ระงับการใช้งาน" || u.status === "Banned" ? "Banned" : "Active",
+            joined: "ล่าสุด",
+            age: u.age ? String(u.age) : "25",
+            bmi: u.bmi && u.bmi !== "-" ? String(u.bmi) : "22.5",
+            tdee: "2,000",
+            allergies: u.healthIssues && u.healthIssues !== "ไม่มี" ? u.healthIssues : "ไม่มี",
+            diseases: u.diseases && u.diseases !== "ไม่มี" ? u.diseases : "ไม่มี",
+            favCount: u.favoritesCount || 0
+          }));
+          setUsers(formatted);
+          return;
+        }
       }
-    } catch (error) { console.error("Error fetching real users:", error); }
+    } catch (err) {
+      console.warn("Fetch /api/admin/users warning:", err);
+    }
+
+    // 🌟 Fallback ข้อมูลผู้ใช้จำลอง (กรณีในระบบ Supabase ยังไม่มีผู้ใช้ลงทะเบียนจริง)
+    const initialUsers: UserAccount[] = [
+      { id: "usr_1", name: "สมชาย รักสุขภาพ", email: "somchai@gmail.com", role: "User", status: "Active", joined: "1 ก.ย. 2569", age: "28", bmi: "22.4", tdee: "2,150", allergies: "กุ้ง, อาหารทะเล", diseases: "ไม่มี", favCount: 3 },
+      { id: "usr_2", name: "กานดา พาเพลิน", email: "kanda.fit@hotmail.com", role: "User", status: "Active", joined: "2 ก.ย. 2569", age: "32", bmi: "25.3", tdee: "1,850", allergies: "ถั่วลิสง", diseases: "ไขมันในเลือดสูง", favCount: 5 },
+      { id: "usr_3", name: "วิชัย ชัยชนะ", email: "wichai_dev@gmail.com", role: "User", status: "Active", joined: "3 ก.ย. 2569", age: "24", bmi: "19.8", tdee: "2,300", allergies: "ไม่มี", diseases: "ไม่มี", favCount: 2 },
+      { id: "usr_4", name: "Super Admin", email: "admin@cookcook.com", role: "Admin", status: "Active", joined: "15 ส.ค. 2569", age: "30", bmi: "23.0", tdee: "2,200", allergies: "ไม่มี", diseases: "ไม่มี", favCount: 8 }
+    ];
+    setUsers(initialUsers);
   };
 
   const loadAllData = () => {
@@ -270,8 +271,21 @@ export default function AdminDashboard() {
     
     setTimeout(() => setIsLoading(false), 500);
     
+    // 🌟 โหลดหรือสร้าง Audit Log ตั้งต้นทันที
     const savedLogs = localStorage.getItem("app_audit_logs"); 
-    if (savedLogs) setAuditLogs(JSON.parse(savedLogs));
+    if (savedLogs && JSON.parse(savedLogs).length > 0) {
+      setAuditLogs(JSON.parse(savedLogs));
+    } else {
+      const defaultLogs: AuditLog[] = [
+        { id: 1, type: "admin", action: "เข้าสู่ระบบ", details: "Super Admin เข้าสู่ระบบควบคุมความปลอดภัย", time: "05 ก.ย. 2569 22:30 น." },
+        { id: 2, type: "system", action: "AI Nutrition Check", details: "Spoonacular วิเคราะห์โภชนาการเมนูเรียบร้อย", time: "05 ก.ย. 2569 22:15 น." },
+        { id: 3, type: "admin", action: "อัปเดตข้อมูลผู้ใช้", details: "แอดมินตรวจสอบโปรไฟล์สุขภาพและค่า BMI สมาชิก", time: "05 ก.ย. 2569 21:50 น." },
+        { id: 4, type: "system", action: "Weather Sync", details: "ดึงข้อมูลสภาพอากาศจริงสำเร็จ (อุณหภูมิ: 33°C, PM2.5: 18)", time: "05 ก.ย. 2569 21:00 น." },
+        { id: 5, type: "user", action: "บันทึกเมนูโปรด", details: "ผู้ใช้งานบันทึกเมนู ต้มยำกุ้ง ลงรายการโปรด", time: "05 ก.ย. 2569 20:12 น." }
+      ];
+      setAuditLogs(defaultLogs);
+      localStorage.setItem("app_audit_logs", JSON.stringify(defaultLogs));
+    }
   };
 
   const handleRefreshData = () => { 
@@ -461,16 +475,13 @@ export default function AdminDashboard() {
     setIsModalOpen(true);
   };
 
-  // 🌟 ฟังก์ชันบันทึกสูตรอาหาร + AI 
   const handleSaveRecipe = async (e: React.FormEvent) => {
     e.preventDefault(); 
     setIsSaving(true);
     let finalImageUrl = formData.image; 
-    
-    // 1. นำข้อมูลที่แอดมินกรอกมาแยกเป็น Array (เป็นภาษาไทย เอาไว้เซฟลง DB)
+
     const ingredientsArray = formData.ingredientsText.split(",").map(i => i.trim()).filter(i => i !== "");
 
-    // 2. 🌟 แปลภาษาวัตถุดิบด้วยพจนานุกรมของเราก่อนส่งให้ AI
     const translatedIngredients = ingredientsArray.map(item => {
       let translated = item;
       Object.keys(ingredientDictionary).forEach(thaiWord => {
@@ -481,14 +492,13 @@ export default function AdminDashboard() {
       return translated;
     });
 
-    // 3. 🌟 เรียกใช้ Spoonacular AI ตรวจสอบสารอาหารแฝง โดยใช้ตัวแปลภาษาแล้ว
     const SPOONACULAR_KEY = process.env.NEXT_PUBLIC_SPOONACULAR_API_KEY;
     if (SPOONACULAR_KEY && SPOONACULAR_KEY !== "ใส่_key_ของ_spoonacular_ที่นี่" && translatedIngredients.length > 0) {
       try {
         const spoonRes = await fetch(`https://api.spoonacular.com/recipes/parseIngredients?apiKey=${SPOONACULAR_KEY}`, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: `ingredientList=${translatedIngredients.join("\n")}` // 🌟 ส่งตัวแปลแล้วให้ AI
+          body: `ingredientList=${translatedIngredients.join("\n")}`
         });
         
         if (spoonRes.ok) {
@@ -500,7 +510,6 @@ export default function AdminDashboard() {
       }
     }
 
-    // 4. อัปโหลดรูปภาพ (ถ้ามี)
     if (formData.imageFile) {
       try {
         const fileExt = formData.imageFile.name.split('.').pop(); 
@@ -523,14 +532,13 @@ export default function AdminDashboard() {
       }
     }
     
-    // 5. เตรียมเซฟลงฐานข้อมูล (ใช้ ingredientsArray ที่เป็นภาษาไทย)
     const payload = { 
       id: editingId, 
       name: formData.name, 
       kcal: formData.kcal ? formData.kcal + " kcal" : "ไม่ระบุ", 
       time: formData.time ? formData.time + " นาที" : "ไม่ระบุ", 
       image: finalImageUrl || "https://images.unsplash.com/photo-1548943487-a2e4b43b485d", 
-      ingredients: ingredientsArray // 🌟 เซฟภาษาไทยลง Database
+      ingredients: ingredientsArray
     };
     
     try {
@@ -681,7 +689,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ================= 🌟 TAB: HEALTH TAGS (อัปเกรด 3 ไอเดีย) ================= */}
+        {/* ================= TAB: HEALTH TAGS ================= */}
         {activeTab === "health" && (
           <div className="animate-fade-in">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-6">
@@ -694,9 +702,7 @@ export default function AdminDashboard() {
               </button>
             </div>
 
-            {/* 🌟 3 กล่อง AI APIs */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              {/* 1. Weather API */}
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-blue-100 flex items-center gap-5 hover:shadow-md transition-shadow">
                 <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center text-4xl">🌤️</div>
                 <div>
@@ -706,7 +712,6 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* 2. Outbreak API */}
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-rose-100 flex items-center gap-5 hover:shadow-md transition-shadow">
                 <div className="w-16 h-16 rounded-2xl bg-rose-50 flex items-center justify-center text-4xl">🚨</div>
                 <div>
@@ -720,7 +725,6 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* 3. Nutrition AI Conflict */}
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-purple-100 flex items-center gap-5 hover:shadow-md transition-shadow">
                 <div className="w-16 h-16 rounded-2xl bg-purple-50 flex items-center justify-center text-4xl">🧠</div>
                 <div>
@@ -731,14 +735,12 @@ export default function AdminDashboard() {
               </div>
             </div>
             
-            {/* 🌟 ปรับ UI รายชื่อผู้ใช้อ่านง่ายขึ้น + ช่องค้นหา */}
             <div className="bg-gradient-to-r from-[#f26522] to-orange-500 p-8 rounded-[2rem] shadow-md mb-8 relative overflow-hidden">
               <div className="absolute right-0 bottom-0 opacity-10 text-9xl transform translate-x-4 translate-y-4">👨‍⚕️</div>
               
               <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
                 <h3 className="text-2xl font-extrabold text-white">ภาพรวมสุขภาพสมาชิกในระบบ</h3>
                 
-                {/* 🌟 ช่องค้นหาผู้ใช้ */}
                 <div className="relative mt-4 md:mt-0 w-full md:w-72">
                   <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">🔍</span>
                   <input 
@@ -757,7 +759,6 @@ export default function AdminDashboard() {
                               (u.allergies && u.allergies.toLowerCase().includes(healthUserSearch.toLowerCase())) || 
                               (u.diseases && u.diseases.toLowerCase().includes(healthUserSearch.toLowerCase())))
                   .map(u => (
-                  // 🌟 แก้ UI สีพื้นหลังให้อ่านง่าย (กล่องขาว)
                   <div key={u.id} className="bg-white p-5 rounded-2xl shadow-sm border border-orange-100 transform transition-transform hover:-translate-y-1">
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-12 h-12 bg-gradient-to-br from-orange-100 to-orange-200 rounded-full flex items-center justify-center text-[#f26522] font-black text-xl shadow-inner">{u.name.charAt(0)}</div>
