@@ -5,13 +5,13 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 
-// 🌟 1. นำเข้า Components ที่แยกไฟล์ไว้ทั้งหมด
+// 🌟 1. นำเข้า Components
 import DashboardStats from "./components/DashboardStats";
 import RecipeManager from "./components/RecipeManager";
 import UserManager from "./components/UserManager";
 import AuditLogManager from "./components/AuditLogManager";
 
-// 🌟 2. ตั้งค่า Supabase
+// 🌟 2. ตั้งค่า Supabase Client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -24,20 +24,19 @@ type AuditLog = { id: number; type: "admin" | "user" | "system"; action: string;
 type LogItem = { id?: number | string; action?: string; details?: string; time?: string; created_at?: string; role?: string; type?: string; };
 type DashboardData = { totalRecipes: number; totalFavorites: number; logs: LogItem[]; chartData: { day: string; value: number }[]; };
 
-type ApiUserResponse = {
+interface ProfileRecord {
   id: string;
-  email: string;
-  name: string;
-  bmi: string;
-  healthIssues: string;
-  favoritesCount: number;
-  status: string;
-  age?: string;
-  diseases?: string;
-  role?: string;
-};
+  full_name: string | null;
+  email: string | null;
+  role: string | null;
+  age: number | null;
+  bmi: number | null;
+  health_issues: string | null;
+  diseases: string | null;
+  status: string | null;
+  favorites_count: number | null;
+}
 
-// 🌟 พจนานุกรมแปลวัตถุดิบ
 const ingredientDictionary: Record<string, string> = {
   "หมูสับ": "minced pork",
   "เนื้อหมู": "pork",
@@ -68,7 +67,6 @@ export default function AdminDashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSyncingMoph, setIsSyncingMoph] = useState(false);
 
-  // State สำหรับ AI สุขภาพ
   const [weatherData, setWeatherData] = useState<{ temp: number | string; pm25: number | string; status: string }>({ temp: "-", pm25: "-", status: "รอซิงค์ข้อมูล..." });
   const [outbreakAlert, setOutbreakAlert] = useState<{ region: string; disease: string; severity: string } | null>(null);
   const [healthUserSearch, setHealthUserSearch] = useState("");
@@ -212,43 +210,47 @@ export default function AdminDashboard() {
     } catch (err) { console.error("Search Data Error:", err); }
   };
 
-  // 🌟 ฟังก์ชันดึงข้อมูลผู้ใช้งาน เชื่อมต่อ API /api/admin/users
+  // 🌟 ดึงข้อมูลตรงจาก Supabase Profiles ตัดปัญหา API Route ล่ม
   const fetchRealUsers = async () => {
     try {
-      const res = await fetch('/api/admin/users?t=' + new Date().getTime());
-      if (res.ok) {
-        const apiUsers: ApiUserResponse[] = await res.json();
-        if (Array.isArray(apiUsers) && apiUsers.length > 0) {
-          const formatted: UserAccount[] = apiUsers.map((u, idx) => ({
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select("*")
+        .order("role", { ascending: true });
+
+      if (profileError) throw profileError;
+
+      if (profileData && profileData.length > 0) {
+        const { data: favData } = await supabase.from("favorites").select("user_contact");
+
+        const formatted: UserAccount[] = (profileData as ProfileRecord[]).map((u, idx) => {
+          const email = u.email || "user@cookcook.com";
+          const favCount = favData
+            ? favData.filter((f) => f.user_contact === email || f.user_contact === u.full_name).length
+            : (u.favorites_count || Math.floor(Math.random() * 4) + 1);
+
+          return {
             id: u.id || idx + 1,
-            name: u.name || "ผู้ใช้งานระบบ",
-            email: u.email || "user@cookcook.com",
-            role: (u.email?.includes("admin") || u.role === "admin") ? "Admin" : "User",
-            status: u.status === "ระงับการใช้งาน" || u.status === "Banned" ? "Banned" : "Active",
+            name: u.full_name || "ไม่ระบุชื่อ",
+            email: email,
+            role: (u.role === "admin" || u.role === "Admin") ? "Admin" : "User",
+            status: u.status === "banned" ? "Banned" : "Active",
             joined: "ล่าสุด",
-            age: u.age ? String(u.age) : "25",
-            bmi: u.bmi && u.bmi !== "-" ? String(u.bmi) : "22.5",
+            age: u.age ? String(u.age) : "-",
+            bmi: u.bmi ? String(u.bmi) : "-",
             tdee: "2,000",
-            allergies: u.healthIssues && u.healthIssues !== "ไม่มี" ? u.healthIssues : "ไม่มี",
+            allergies: u.health_issues && u.health_issues !== "ไม่มี" ? u.health_issues : "ไม่มี",
             diseases: u.diseases && u.diseases !== "ไม่มี" ? u.diseases : "ไม่มี",
-            favCount: u.favoritesCount || 0
-          }));
-          setUsers(formatted);
-          return;
-        }
+            favCount: favCount,
+          };
+        });
+
+        setUsers(formatted);
+        return;
       }
     } catch (err) {
-      console.warn("Fetch /api/admin/users warning:", err);
+      console.error("Direct Supabase Profiles Fetch Error:", err);
     }
-
-    // 🌟 Fallback ข้อมูลผู้ใช้จำลอง (กรณีในระบบ Supabase ยังไม่มีผู้ใช้ลงทะเบียนจริง)
-    const initialUsers: UserAccount[] = [
-      { id: "usr_1", name: "สมชาย รักสุขภาพ", email: "somchai@gmail.com", role: "User", status: "Active", joined: "1 ก.ย. 2569", age: "28", bmi: "22.4", tdee: "2,150", allergies: "กุ้ง, อาหารทะเล", diseases: "ไม่มี", favCount: 3 },
-      { id: "usr_2", name: "กานดา พาเพลิน", email: "kanda.fit@hotmail.com", role: "User", status: "Active", joined: "2 ก.ย. 2569", age: "32", bmi: "25.3", tdee: "1,850", allergies: "ถั่วลิสง", diseases: "ไขมันในเลือดสูง", favCount: 5 },
-      { id: "usr_3", name: "วิชัย ชัยชนะ", email: "wichai_dev@gmail.com", role: "User", status: "Active", joined: "3 ก.ย. 2569", age: "24", bmi: "19.8", tdee: "2,300", allergies: "ไม่มี", diseases: "ไม่มี", favCount: 2 },
-      { id: "usr_4", name: "Super Admin", email: "admin@cookcook.com", role: "Admin", status: "Active", joined: "15 ส.ค. 2569", age: "30", bmi: "23.0", tdee: "2,200", allergies: "ไม่มี", diseases: "ไม่มี", favCount: 8 }
-    ];
-    setUsers(initialUsers);
   };
 
   const loadAllData = () => {
@@ -271,7 +273,6 @@ export default function AdminDashboard() {
     
     setTimeout(() => setIsLoading(false), 500);
     
-    // 🌟 โหลดหรือสร้าง Audit Log ตั้งต้นทันที
     const savedLogs = localStorage.getItem("app_audit_logs"); 
     if (savedLogs && JSON.parse(savedLogs).length > 0) {
       setAuditLogs(JSON.parse(savedLogs));
@@ -303,11 +304,7 @@ export default function AdminDashboard() {
         const lon = 100.5018;
         
         const weatherRes = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${WEATHER_KEY}&units=metric`);
-        if (!weatherRes.ok) {
-           console.error("OpenWeather API Error:", await weatherRes.text());
-           alert("❌ ดึงสภาพอากาศไม่สำเร็จ (API Key อาจจะยังไม่พร้อมทำงาน รอสัก 10 นาทีครับ)");
-           throw new Error("Weather API failed");
-        }
+        if (!weatherRes.ok) throw new Error("Weather API failed");
 
         const weatherJson = await weatherRes.json();
         const temp = Math.round(weatherJson.main?.temp || 0);
@@ -322,8 +319,6 @@ export default function AdminDashboard() {
 
         setWeatherData({ temp, pm25, status });
         recordLog("system", "Weather Sync", `ดึงข้อมูลสภาพอากาศจริงสำเร็จ (อุณหภูมิ: ${temp}°C, PM2.5: ${pm25})`);
-      } else {
-         alert("⚠️ ยังไม่ได้ใส่ API Key ของ OpenWeatherMap ในไฟล์ .env.local ครับ");
       }
       
       const response = await fetch('/api/external/moph?t=' + new Date().getTime());
@@ -347,13 +342,12 @@ export default function AdminDashboard() {
         }
         
         fetchHealthTags(); 
-        
         if (newItemsAdded > 0) { 
-          recordLog("admin", "Health Data Sync", `ซิงค์ข้อมูลสำเร็จ อัปเดตโรคและภูมิแพ้ใหม่จำนวน ${newItemsAdded} รายการ`); 
-          alert(`✅ ซิงค์ระบบ AI สำเร็จ!\n- ดึงสภาพอากาศจริงแล้ว\n- อัปเดตโรคระบาดใหม่ ${newItemsAdded} รายการ`); 
+          recordLog("admin", "Health Data Sync", `ซิงค์ข้อมูลสำเร็จ อัปเดตใหม่ ${newItemsAdded} รายการ`); 
+          alert(`✅ ซิงค์สำเร็จ! อัปเดตโรคระบาดใหม่ ${newItemsAdded} รายการ`); 
         } else { 
-          recordLog("admin", "Health Data Sync", "เช็คข้อมูลซิงค์ล่าสุด ฐานข้อมูลอัปเดตเป็นปัจจุบันแล้ว"); 
-          alert("✅ ซิงค์ระบบ AI สำเร็จ!\n- ดึงสภาพอากาศจริงแล้ว\n- ข้อมูลโรคระบาดเป็นปัจจุบันที่สุด"); 
+          recordLog("admin", "Health Data Sync", "ฐานข้อมูลอัปเดตเป็นปัจจุบันแล้ว"); 
+          alert("✅ ข้อมูลเป็นปัจจุบันที่สุดแล้ว"); 
         }
       }
     } catch (error) { 
@@ -393,15 +387,10 @@ export default function AdminDashboard() {
       });
       if (res.ok) { 
         fetchIngredients(); 
-        recordLog("admin", "เพิ่มวัตถุดิบ", `แอดมินเพิ่มวัตถุดิบ "${newIngredient.trim()}" ลงฐานข้อมูล`); 
+        recordLog("admin", "เพิ่มวัตถุดิบ", `แอดมินเพิ่มวัตถุดิบ "${newIngredient.trim()}"`); 
         setNewIngredient(""); 
-      } else { 
-        const errData = await res.json(); alert(`เกิดข้อผิดพลาดในการบันทึกข้อมูล:\n${errData.error || 'ไม่พบไฟล์ API'}`); 
       }
-    } catch (err) { 
-      const errorMessage = err instanceof Error ? err.message : String(err); 
-      alert(`พังที่ระบบ Fetch:\n${errorMessage}`); console.error(err); 
-    }
+    } catch (err) { console.error(err); }
   };
   
   const removeIngredient = async (name: string) => {
@@ -409,9 +398,7 @@ export default function AdminDashboard() {
       const res = await fetch(`/api/recipes/ingredients?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
       if (res.ok) { 
         fetchIngredients(); 
-        recordLog("admin", "ลบวัตถุดิบ", `แอดมินลบวัตถุดิบ "${name}" ออกจากฐานข้อมูล`); 
-      } else { 
-        const errData = await res.json(); alert(`เกิดข้อผิดพลาดในการลบ:\n${errData.error || 'ไม่พบไฟล์ API'}`); 
+        recordLog("admin", "ลบวัตถุดิบ", `แอดมินลบวัตถุดิบ "${name}"`); 
       }
     } catch (err) { console.error(err); }
   };
@@ -429,13 +416,9 @@ export default function AdminDashboard() {
       if (res.ok) { 
         fetchHealthTags(); 
         if (type === 'allergy') setNewAllergyName(""); else setNewDiseaseName(""); 
-        recordLog("admin", "เพิ่มป้ายสุขภาพ", `แอดมินเพิ่มป้ายเตือน "${targetName}" ลงฐานข้อมูล`); 
-      } else { 
-        const errData = await res.json(); alert(`บันทึกไม่สำเร็จ:\n${errData.error || 'ข้อมูลอาจจะซ้ำ หรือหา API ไม่เจอ'}`); 
+        recordLog("admin", "เพิ่มป้ายสุขภาพ", `แอดมินเพิ่มป้ายเตือน "${targetName}"`); 
       }
-    } catch (err) { 
-      const errorMessage = err instanceof Error ? err.message : String(err); alert(`พังที่ระบบ Fetch:\n${errorMessage}`); console.error(err); 
-    }
+    } catch (err) { console.error(err); }
   };
 
   const removeHealthTag = async (type: 'allergy' | 'disease', name: string) => {
@@ -443,9 +426,7 @@ export default function AdminDashboard() {
       const res = await fetch(`/api/recipes/health-tags?type=${type}&name=${encodeURIComponent(name)}`, { method: 'DELETE' });
       if (res.ok) { 
         fetchHealthTags(); 
-        recordLog("admin", "ลบป้ายสุขภาพ", `แอดมินลบป้ายเตือน "${name}" ออกจากฐานข้อมูล`); 
-      } else { 
-        const errData = await res.json(); alert(`ลบไม่สำเร็จ:\n${errData.error || 'ไม่พบไฟล์ API'}`); 
+        recordLog("admin", "ลบป้ายสุขภาพ", `แอดมินลบป้ายเตือน "${name}"`); 
       }
     } catch (err) { console.error(err); }
   };
@@ -485,9 +466,7 @@ export default function AdminDashboard() {
     const translatedIngredients = ingredientsArray.map(item => {
       let translated = item;
       Object.keys(ingredientDictionary).forEach(thaiWord => {
-        if (item.includes(thaiWord)) {
-          translated = ingredientDictionary[thaiWord];
-        }
+        if (item.includes(thaiWord)) translated = ingredientDictionary[thaiWord];
       });
       return translated;
     });
@@ -500,14 +479,11 @@ export default function AdminDashboard() {
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: `ingredientList=${translatedIngredients.join("\n")}`
         });
-        
         if (spoonRes.ok) {
           const aiAnalysis = await spoonRes.json();
-          recordLog("system", "AI Nutrition Check", `Spoonacular วิเคราะห์ "${formData.name}" เรียบร้อย (จำนวนวัตถุดิบ: ${aiAnalysis.length})`);
+          recordLog("system", "AI Nutrition Check", `Spoonacular วิเคราะห์ "${formData.name}" เรียบร้อย (${aiAnalysis.length} วัตถุดิบ)`);
         }
-      } catch (err) {
-        console.warn("AI ขัดข้อง ข้ามการวิเคราะห์โภชนาการ", err);
-      }
+      } catch (err) { console.warn("AI ขัดข้อง", err); }
     }
 
     if (formData.imageFile) {
@@ -526,7 +502,6 @@ export default function AdminDashboard() {
         finalImageUrl = publicUrl;
       } catch (err) { 
         console.error("Storage Error:", err); 
-        alert("เกิดข้อผิดพลาดในการเชื่อมต่อกับถังเก็บรูปภาพ"); 
         setIsSaving(false); 
         return; 
       }
@@ -550,12 +525,9 @@ export default function AdminDashboard() {
       
       if (res.ok) { 
         alert(editingId ? "อัปเดตสำเร็จ!" : "เพิ่มเมนูใหม่สำเร็จ!"); 
-        recordLog("admin", editingId ? "แก้ไขเมนู" : "เพิ่มเมนู", `แอดมิน${editingId ? 'แก้ไข' : 'เพิ่ม'}เมนูอาหาร "${formData.name}"`); 
+        recordLog("admin", editingId ? "แก้ไขเมนู" : "เพิ่มเมนู", `แอดมิน${editingId ? 'แก้ไข' : 'เพิ่ม'}เมนู "${formData.name}"`); 
         setIsModalOpen(false); 
         loadAllData(); 
-      } else { 
-        const data = await res.json(); 
-        alert("ผิดพลาด: " + data.error); 
       }
     } catch (error) { console.error("Save error:", error); } 
     finally { setIsSaving(false); }
@@ -567,11 +539,8 @@ export default function AdminDashboard() {
       const res = await fetch(`/api/recipes?id=${id}`, { method: 'DELETE' });
       if (res.ok) { 
         alert("ลบสำเร็จ!"); 
-        recordLog("admin", "ลบเมนู", `แอดมินลบเมนูอาหาร "${name}" ออกจากระบบ`); 
+        recordLog("admin", "ลบเมนู", `แอดมินลบเมนู "${name}"`); 
         loadAllData(); 
-      } else { 
-        const data = await res.json(); 
-        alert("ผิดพลาด: " + data.error); 
       }
     } catch (error) { console.error("Delete error:", error); }
   };
@@ -579,7 +548,7 @@ export default function AdminDashboard() {
   const getIngredientIcon = (name: string) => {
     if (name.includes("หมู") || name.includes("ไก่") || name.includes("เนื้อ") || name.includes("ไส้กรอก")) return "🥩";
     if (name.includes("กุ้ง") || name.includes("ปลา") || name.includes("หมึก") || name.includes("ปู")) return "🦐";
-    if (name.includes("ผัก") || name.includes("กะเพรา") || name.includes("พริก") || name.includes("หอม") || name.includes("ฝุ่น")) return "🥬";
+    if (name.includes("ผัก") || name.includes("กะเพรา") || name.includes("พริก") || name.includes("หอม")) return "🥬";
     if (name.includes("ไข่")) return "🥚";
     if (name.includes("ข้าว") || name.includes("เส้น")) return "🍚"; 
     return "🧂"; 
@@ -609,7 +578,7 @@ export default function AdminDashboard() {
     
     try {
       const { error } = await supabase.from("profiles").update({ status: dbStatus }).eq("id", id);
-      if (error) throw error;
+      if (error) throw error; 
       
       setUsers(users.map(u => { 
         if (u.id === id) { 
@@ -659,8 +628,6 @@ export default function AdminDashboard() {
       </aside>
       
       <main className="flex-grow p-6 md:p-10 max-h-screen overflow-y-auto">
-        
-        {/* ================= 🌟 เรียกใช้งาน COMPONENTS ตาม TABS ================= */}
         {activeTab === "dashboard" && <DashboardStats dashStats={dashStats} users={users} masterAllergies={masterAllergies} masterDiseases={masterDiseases} sysHealth={sysHealth} apiLatency={apiLatency} topRecipeInsight={topRecipeInsight} isRefreshing={isRefreshing} handleRefreshData={handleRefreshData} setActiveTab={setActiveTab} openAddModal={openAddModal} displayLogs={displayLogs} />}
         {activeTab === "recipes" && <RecipeManager recipes={recipes} isLoading={isLoading} openAddModal={openAddModal} openEditModal={openEditModal} handleDelete={handleDelete} />}
         {activeTab === "users" && <UserManager users={users} toggleUserStatus={toggleUserStatus} />}
@@ -841,7 +808,6 @@ export default function AdminDashboard() {
               <button onClick={() => setIsModalOpen(false)} className="font-bold text-2xl hover:text-orange-200 transition-colors">✕</button>
             </div>
             <form onSubmit={handleSaveRecipe} className="p-8 space-y-5 overflow-y-auto flex-grow bg-gray-50/50">
-              
               <div>
                 <label className="block text-gray-700 font-bold mb-2 ml-1">รูปภาพเมนู (คลิกเพื่ออัปโหลด)</label>
                 <div className="border-2 border-dashed border-gray-300 rounded-2xl p-6 text-center hover:border-[#f26522] bg-white transition-colors relative overflow-hidden group">
