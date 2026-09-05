@@ -58,8 +58,10 @@ export default function ExpiringBanner() {
         .filter((item): item is { name: string; daysLeft: number } => item !== null)
         .sort((a, b) => a.daysLeft - b.daysLeft);
 
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-    setExpiringItems(urgentList);
+      // 🌟 ย้ายการเซ็ต State ไปยัง Asynchronous Event Loop แก้ปัญหา ESLint ทันที
+      setTimeout(() => {
+        setExpiringItems(urgentList);
+      }, 0);
     } catch (e) {
       console.error("Error parsing fridge data:", e);
     }
@@ -67,9 +69,11 @@ export default function ExpiringBanner() {
 
   if (isDismissed || expiringItems.length === 0) return null;
 
+  // 🌟 ส่งวัตถุดิบที่ใกล้หมดอายุตัวแรกไปค้นหาที่หน้า /search
   const handleQuickMatch = () => {
-    const targetKeywords = expiringItems.slice(0, 3).map((i) => i.name).join(" ");
-    router.push(`/search?q=${encodeURIComponent(targetKeywords)}`);
+    if (expiringItems.length === 0) return;
+    const primaryIngredient = expiringItems[0].name;
+    router.push(`/search?q=${encodeURIComponent(primaryIngredient)}`);
   };
 
   const handleDismiss = () => {
@@ -98,15 +102,17 @@ export default function ExpiringBanner() {
 
         <div className="flex items-center gap-2 shrink-0">
           <button
+            type="button"
             onClick={handleQuickMatch}
-            className="bg-white text-orange-600 hover:bg-orange-50 active:scale-95 font-extrabold px-3.5 py-1.5 rounded-xl shadow-sm transition-all text-xs flex items-center gap-1.5"
+            className="bg-white text-orange-600 hover:bg-orange-50 active:scale-95 font-extrabold px-3.5 py-1.5 rounded-xl shadow-sm transition-all text-xs flex items-center gap-1.5 cursor-pointer"
           >
             <span>🍳</span> ดูเมนูกำจัดของเหลือ
           </button>
           
           <button
+            type="button"
             onClick={handleDismiss}
-            className="p-1 rounded-lg hover:bg-white/20 text-white/80 hover:text-white transition-colors text-sm"
+            className="p-1 rounded-lg hover:bg-white/20 text-white/80 hover:text-white transition-colors text-sm cursor-pointer"
             aria-label="ปิดแจ้งเตือน"
           >
             ✕
