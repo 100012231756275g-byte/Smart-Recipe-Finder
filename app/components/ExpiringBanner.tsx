@@ -1,7 +1,7 @@
 // app/components/ExpiringBanner.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 interface FridgeItem {
@@ -13,32 +13,47 @@ interface FridgeItem {
 
 export default function ExpiringBanner() {
   const router = useRouter();
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [expiringItems, setExpiringItems] = useState<{ name: string; daysLeft: number }[]>([]);
   const [isDismissed, setIsDismissed] = useState(false);
 
-  useEffect(() => {
-    // 1. ตรวจสอบว่าผู้ใช้เคยกดปิดแบนเนอร์ไปแล้วใน Session นี้หรือไม่
-    const dismissed = sessionStorage.getItem("dismiss_expiring_banner");
-    if (dismissed === "true") {
+  const checkExpiringItems = useCallback(() => {
+    // 1. ตรวจสอบสถานะ Login
+    const loggedInStatus = sessionStorage.getItem("isLoggedIn") === "true";
+    setIsLoggedIn(loggedInStatus);
+    if (!loggedInStatus) {
+      setExpiringItems([]);
       return;
     }
 
-    // 2. ดึงรายการวัตถุดิบจาก LocalStorage
+    // 2. ตรวจสอบว่าเคยกดปิดในเซสชันนี้หรือยัง
+    const dismissed = sessionStorage.getItem("dismiss_expiring_banner");
+    if (dismissed === "true") {
+      setIsDismissed(true);
+      return;
+    }
+
+    // 3. ดึงข้อมูลตู้เย็น
     const rawData = 
       localStorage.getItem("my_fridge") || 
       localStorage.getItem("fridge_items") || 
       localStorage.getItem("fridge");
 
-    if (!rawData) return;
+    if (!rawData) {
+      setExpiringItems([]);
+      return;
+    }
 
     try {
       const items: FridgeItem[] = JSON.parse(rawData);
-      if (!Array.isArray(items)) return;
+      if (!Array.isArray(items) || items.length === 0) {
+        setExpiringItems([]);
+        return;
+      }
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      // 3. กรองเฉพาะวัตถุดิบที่หมดอายุแล้ว หรือจะหมดอายุภายใน 3 วัน
       const urgentList = items
         .map((item) => {
           const dateStr = item.expiry_date || item.expireDate;
@@ -58,18 +73,33 @@ export default function ExpiringBanner() {
         .filter((item): item is { name: string; daysLeft: number } => item !== null)
         .sort((a, b) => a.daysLeft - b.daysLeft);
 
-      // 🌟 ย้ายการเซ็ต State ไปยัง Asynchronous Event Loop แก้ปัญหา ESLint ทันที
-      setTimeout(() => {
-        setExpiringItems(urgentList);
-      }, 0);
+      setExpiringItems(urgentList);
     } catch (e) {
       console.error("Error parsing fridge data:", e);
+      setExpiringItems([]);
     }
   }, []);
 
-  if (isDismissed || expiringItems.length === 0) return null;
+  useEffect(() => {
+    // 🌟 แก้ไข ESLint: เรียกฟังก์ชันผ่าน setTimeout เพื่อไม่ให้ setState ทำงานแบบ synchronous ใน effect body
+    const timer = setTimeout(() => {
+      checkExpiringItems();
+    }, 0);
 
-  // 🌟 ส่งวัตถุดิบที่ใกล้หมดอายุตัวแรกไปค้นหาที่หน้า /search
+    window.addEventListener("profileUpdated", checkExpiringItems);
+    window.addEventListener("storage", checkExpiringItems);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("profileUpdated", checkExpiringItems);
+      window.removeEventListener("storage", checkExpiringItems);
+    };
+  }, [checkExpiringItems]);
+
+  // ซ่อนแบนเนอร์ถ้ายังไม่ล็อกอิน หรือกดปิด หรือไม่มีของใกล้หมดอายุ
+  if (!isLoggedIn || isDismissed || expiringItems.length === 0) {
+    return null;
+  }
+
   const handleQuickMatch = () => {
     if (expiringItems.length === 0) return;
     const primaryIngredient = expiringItems[0].name;
