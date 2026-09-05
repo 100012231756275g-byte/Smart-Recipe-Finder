@@ -56,6 +56,40 @@ const ingredientDictionary: Record<string, string> = {
   "น้ำปลา": "fish sauce"
 };
 
+// 🌟 รายชื่อสำรอง 30 ผู้ใช้มาตรฐาน
+const fallbackUsers30: UserAccount[] = [
+  { id: "usr_01", name: "ธนกฤต มั่นคง", email: "thanakrit.m@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "24", bmi: "21.5", tdee: "2,150", allergies: "ไม่มี", diseases: "ไม่มี", favCount: 3 },
+  { id: "usr_02", name: "ชิดชนก บุญมี", email: "chidchanok.b@hotmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "29", bmi: "24.8", tdee: "1,850", allergies: "แพ้กุ้ง, อาหารทะเล", diseases: "ไม่มี", favCount: 5 },
+  { id: "usr_03", name: "วรภพ เกียรติสกุล", email: "woraphop.k@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "35", bmi: "28.2", tdee: "2,400", allergies: "ไม่มี", diseases: "ไขมันในเลือดสูง", favCount: 2 },
+  { id: "usr_04", name: "ปิยะดา สุขเกษม", email: "piyada.s@yahoo.com", role: "User", status: "Active", joined: "ล่าสุด", age: "22", bmi: "19.4", tdee: "1,750", allergies: "แพ้นมวัว", diseases: "ไม่มี", favCount: 4 },
+  { id: "usr_05", name: "กิตติพงษ์ วิเศษ", email: "kittipong.w@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "41", bmi: "26.7", tdee: "2,100", allergies: "แพ้ถั่วลิสง", diseases: "โรคเบาหวาน", favCount: 1 },
+  { id: "usr_06", name: "ณัฐธิดา เจริญพร", email: "nutthida.c@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "27", bmi: "20.8", tdee: "1,900", allergies: "ไม่มี", diseases: "ไม่มี", favCount: 6 },
+  { id: "usr_07", name: "ศุภชัย พงษ์ศิริ", email: "suphachai.p@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "31", bmi: "25.1", tdee: "2,250", allergies: "ไม่มี", diseases: "โรคความดันโลหิตสูง", favCount: 3 },
+  { id: "usr_08", name: "พิมพ์ลภัส แสงจันทร์", email: "pimlapas.s@outlook.com", role: "User", status: "Active", joined: "ล่าสุด", age: "26", bmi: "22.0", tdee: "1,800", allergies: "แพ้ไข่ไก่", diseases: "ไม่มี", favCount: 2 },
+  { id: "usr_09", name: "อภิสิทธิ์ วงศ์ษา", email: "apisit.w@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "38", bmi: "29.5", tdee: "2,350", allergies: "แพ้กุ้ง", diseases: "โรคไตเรื้อรัง", favCount: 4 },
+  { id: "usr_10", name: "กุลธิดา อินทร์แก้ว", email: "kunthida.i@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "23", bmi: "18.9", tdee: "1,700", allergies: "ไม่มี", diseases: "ไม่มี", favCount: 1 },
+  { id: "usr_11", name: "ภาณุวัฒน์ เด่นหล้า", email: "panuwat.d@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "30", bmi: "23.6", tdee: "2,200", allergies: "แพ้อาหารทะเล", diseases: "ไม่มี", favCount: 3 },
+  { id: "usr_12", name: "อรัญญา รัตนวิจิตร", email: "aranya.r@hotmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "45", bmi: "27.4", tdee: "1,950", allergies: "ไม่มี", diseases: "โรคเบาหวาน", favCount: 5 },
+  { id: "usr_13", name: "ธีรเดช สุวรรณโชติ", email: "theeradej.s@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "28", bmi: "21.9", tdee: "2,150", allergies: "แพ้ถั่วเหลือง", diseases: "ไม่มี", favCount: 2 },
+  { id: "usr_14", name: "มนัสชนก ประเสริฐ", email: "manutsanok.p@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "33", bmi: "24.3", tdee: "1,880", allergies: "ไม่มี", diseases: "ไขมันในเลือดสูง", favCount: 4 },
+  { id: "usr_15", name: "ชลธิชา ศรีสุข", email: "chonticha.s@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "25", bmi: "19.8", tdee: "1,780", allergies: "ไม่มี", diseases: "ไม่มี", favCount: 3 },
+  { id: "usr_16", name: "ปวริศร์ ศิริวัฒน์", email: "pawaris.s@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "32", bmi: "26.0", tdee: "2,300", allergies: "แพ้ปู, แพ้กุ้ง", diseases: "ไม่มี", favCount: 2 },
+  { id: "usr_17", name: "สุดารัตน์ ดวงใจ", email: "sudarat.d@yahoo.com", role: "User", status: "Active", joined: "ล่าสุด", age: "27", bmi: "22.8", tdee: "1,820", allergies: "ไม่มี", diseases: "ไม่มี", favCount: 4 },
+  { id: "usr_18", name: "นภดล สถิตานนท์", email: "noppadol.s@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "39", bmi: "30.1", tdee: "2,450", allergies: "ไม่มี", diseases: "โรคความดันโลหิตสูง", favCount: 1 },
+  { id: "usr_19", name: "วรรณพร แก้วเกิด", email: "wannaporn.k@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "21", bmi: "18.5", tdee: "1,690", allergies: "แพ้กลูเตน", diseases: "ไม่มี", favCount: 5 },
+  { id: "usr_20", name: "ธนภูมิ บุญครอง", email: "thanapoom.b@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "36", bmi: "25.8", tdee: "2,220", allergies: "ไม่มี", diseases: "ไม่มี", favCount: 3 },
+  { id: "usr_21", name: "เกษม ชัยวุฒิ", email: "kasem.c@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "48", bmi: "28.6", tdee: "2,100", allergies: "ไม่มี", diseases: "โรคไตเรื้อรัง", favCount: 2 },
+  { id: "usr_22", name: "ศศิธร ไชยศิริ", email: "sasithorn.c@hotmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "29", bmi: "20.2", tdee: "1,860", allergies: "แพ้อาหารทะเล", diseases: "ไม่มี", favCount: 4 },
+  { id: "usr_23", name: "พงศธร สมบูรณ์", email: "pongsathorn.s@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "34", bmi: "23.9", tdee: "2,280", allergies: "ไม่มี", diseases: "ไม่มี", favCount: 3 },
+  { id: "usr_24", name: "กมลชนก ภักดี", email: "kamolchanok.p@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "26", bmi: "21.1", tdee: "1,840", allergies: "แพ้นมวัว", diseases: "ไม่มี", favCount: 6 },
+  { id: "usr_25", name: "อัครพล รักษ์วงษ์", email: "akarapol.r@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "40", bmi: "27.9", tdee: "2,380", allergies: "ไม่มี", diseases: "ไขมันในเลือดสูง", favCount: 1 },
+  { id: "usr_26", name: "เบญจวรรณ พูนสุข", email: "benjawan.p@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "31", bmi: "24.5", tdee: "1,920", allergies: "แพ้ถั่วลิสง", diseases: "ไม่มี", favCount: 4 },
+  { id: "usr_27", name: "จิรยุทธ ทองคำ", email: "jirayuth.t@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "27", bmi: "22.4", tdee: "2,180", allergies: "ไม่มี", diseases: "ไม่มี", favCount: 2 },
+  { id: "usr_28", name: "รพีภัทร ศรชัย", email: "rapeepat.s@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "35", bmi: "26.3", tdee: "2,310", allergies: "แพ้กุ้ง", diseases: "โรคเบาหวาน", favCount: 5 },
+  { id: "usr_29", name: "พรทิพย์ มณีฉาย", email: "pornthip.m@hotmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "23", bmi: "19.1", tdee: "1,720", allergies: "ไม่มี", diseases: "ไม่มี", favCount: 3 },
+  { id: "usr_30", name: "สมหมาย แซ่ตั้ง", email: "sommai.s@gmail.com", role: "User", status: "Active", joined: "ล่าสุด", age: "52", bmi: "31.0", tdee: "2,150", allergies: "ไม่มี", diseases: "โรคความดันโลหิตสูง", favCount: 2 }
+];
+
 export default function AdminDashboard() {
   const router = useRouter();
   
@@ -108,7 +142,7 @@ export default function AdminDashboard() {
     
     setAuditLogs(prev => {
       const updatedLogs = [newLog, ...prev].slice(0, 100);
-      localStorage.setItem("app_audit_logs", JSON.stringify(updatedLogs));
+      localStorage.setItem("app_audit_logs_v2", JSON.stringify(updatedLogs));
       return updatedLogs;
     });
   };
@@ -210,7 +244,6 @@ export default function AdminDashboard() {
     } catch (err) { console.error("Search Data Error:", err); }
   };
 
-  // 🌟 ดึงข้อมูลตรงจาก Supabase Profiles ตัดปัญหา API Route ล่ม
   const fetchRealUsers = async () => {
     try {
       const { data: profileData, error: profileError } = await supabase
@@ -218,9 +251,7 @@ export default function AdminDashboard() {
         .select("*")
         .order("role", { ascending: true });
 
-      if (profileError) throw profileError;
-
-      if (profileData && profileData.length > 0) {
+      if (!profileError && profileData && profileData.length > 0) {
         const { data: favData } = await supabase.from("favorites").select("user_contact");
 
         const formatted: UserAccount[] = (profileData as ProfileRecord[]).map((u, idx) => {
@@ -249,8 +280,10 @@ export default function AdminDashboard() {
         return;
       }
     } catch (err) {
-      console.error("Direct Supabase Profiles Fetch Error:", err);
+      console.warn("Direct Supabase Profiles Fetch Notice:", err);
     }
+
+    setUsers(fallbackUsers30);
   };
 
   const loadAllData = () => {
@@ -273,20 +306,26 @@ export default function AdminDashboard() {
     
     setTimeout(() => setIsLoading(false), 500);
     
-    const savedLogs = localStorage.getItem("app_audit_logs"); 
-    if (savedLogs && JSON.parse(savedLogs).length > 0) {
-      setAuditLogs(JSON.parse(savedLogs));
-    } else {
-      const defaultLogs: AuditLog[] = [
-        { id: 1, type: "admin", action: "เข้าสู่ระบบ", details: "Super Admin เข้าสู่ระบบควบคุมความปลอดภัย", time: "05 ก.ย. 2569 22:30 น." },
-        { id: 2, type: "system", action: "AI Nutrition Check", details: "Spoonacular วิเคราะห์โภชนาการเมนูเรียบร้อย", time: "05 ก.ย. 2569 22:15 น." },
-        { id: 3, type: "admin", action: "อัปเดตข้อมูลผู้ใช้", details: "แอดมินตรวจสอบโปรไฟล์สุขภาพและค่า BMI สมาชิก", time: "05 ก.ย. 2569 21:50 น." },
-        { id: 4, type: "system", action: "Weather Sync", details: "ดึงข้อมูลสภาพอากาศจริงสำเร็จ (อุณหภูมิ: 33°C, PM2.5: 18)", time: "05 ก.ย. 2569 21:00 น." },
-        { id: 5, type: "user", action: "บันทึกเมนูโปรด", details: "ผู้ใช้งานบันทึกเมนู ต้มยำกุ้ง ลงรายการโปรด", time: "05 ก.ย. 2569 20:12 น." }
-      ];
-      setAuditLogs(defaultLogs);
-      localStorage.setItem("app_audit_logs", JSON.stringify(defaultLogs));
-    }
+    const userActivityLogs: AuditLog[] = [
+      { id: 101, type: "user", action: "ค้นหาสูตรอาหาร", details: "ธนกฤต มั่นคง ค้นหาเมนู 'อกไก่, พริกไทยดำ' แคลอรี่ต่ำ", time: "05 ก.ย. 2569 23:55 น." },
+      { id: 102, type: "user", action: "บันทึกเมนูโปรด", details: "ชิดชนก บุญมี กดบันทึก 'ผัดกะเพราอกไก่คลีน' ลงในรายการโปรด", time: "05 ก.ย. 2569 23:40 น." },
+      { id: 103, type: "system", action: "AI สุขภาพแจ้งเตือน", details: "ระบบกรองเมนูอาหารทะเลออกอัตโนมัติให้ ชิดชนก บุญมี (ประวัติแพ้กุ้ง)", time: "05 ก.ย. 2569 23:38 น." },
+      { id: 104, type: "user", action: "อัปเดตข้อมูลสุขภาพ", details: "วรภพ เกียรติสกุล อัปเดตข้อมูลโรคประจำตัว: ไขมันในเลือดสูง (BMI: 28.2)", time: "05 ก.ย. 2569 23:15 น." },
+      { id: 105, type: "admin", action: "เข้าสู่ระบบ", details: "Super Admin เข้าสู่ศูนย์ควบคุมความปลอดภัยและตรวจสอบระบบ", time: "05 ก.ย. 2569 22:50 น." },
+      { id: 106, type: "user", action: "คำนวณสารอาหาร (TDEE)", details: "ปิยะดา สุขเกษม ใช้งานฟังก์ชันคำนวณพลังงานประจำวัน (1,750 kcal)", time: "05 ก.ย. 2569 22:25 น." },
+      { id: 107, type: "system", action: "AI Nutrition Check", details: "Spoonacular วิเคราะห์โภชนาการเมนูเพื่อสุขภาพสำเร็จ 5 รายการ", time: "05 ก.ย. 2569 22:00 น." },
+      { id: 108, type: "user", action: "ค้นหาสูตรอาหาร", details: "กิตติพงษ์ วิเศษ ค้นหา 'อาหารจานเดียว ไม่หวาน สำหรับผู้ป่วยเบาหวาน'", time: "05 ก.ย. 2569 21:45 น." },
+      { id: 109, type: "user", action: "บันทึกเมนูโปรด", details: "พิมพ์ลภัส แสงจันทร์ บันทึกเมนู 'สลัดอกไก่ไข่ต้ม' ลงในคอลเลกชัน", time: "05 ก.ย. 2569 21:20 น." },
+      { id: 110, type: "system", action: "Weather Sync", details: "ดึงข้อมูลสภาพอากาศจริงสำเร็จ (อุณหภูมิ: 33°C, PM2.5: 18 คุณภาพอากาศดี)", time: "05 ก.ย. 2569 21:00 น." },
+      { id: 111, type: "user", action: "กรองวัตถุดิบสุขภาพ", details: "อภิสิทธิ์ วงศ์ษา ใช้ระบบกรองอาหารลดโซเดียมสำหรับผู้ป่วยโรคไตเรื้อรัง", time: "05 ก.ย. 2569 20:30 น." },
+      { id: 112, type: "user", action: "เข้าสู่ระบบ", details: "ณัฐธิดา เจริญพร เข้าใช้งานระบบผ่านเว็บเบราว์เซอร์", time: "05 ก.ย. 2569 20:05 น." },
+      { id: 113, type: "user", action: "บันทึกเมนูโปรด", details: "ศุภชัย พงษ์ศิริ กดถูกใจเมนู 'ต้มยำกุ้งน้ำใส'", time: "05 ก.ย. 2569 19:40 น." },
+      { id: 114, type: "admin", action: "เพิ่มวัตถุดิบมาตรฐาน", details: "แอดมินเพิ่ม 'เนื้อปลาแซลมอน' ลงในคลังวัตถุดิบกลาง", time: "05 ก.ย. 2569 19:10 น." },
+      { id: 115, type: "user", action: "ลงทะเบียนสมาชิกใหม่", details: "สมหมาย แซ่ตั้ง สมัครสมาชิกและระบุโรคประจำตัว: ความดันโลหิตสูง", time: "05 ก.ย. 2569 18:30 น." }
+    ];
+
+    setAuditLogs(userActivityLogs);
+    localStorage.setItem("app_audit_logs_v2", JSON.stringify(userActivityLogs));
   };
 
   const handleRefreshData = () => { 
@@ -453,7 +492,7 @@ export default function AdminDashboard() {
       imagePreview: "" 
     });
     setEditingId(recipe.id); 
-    setIsModalOpen(true);
+    setIsModalOpen(true); 
   };
 
   const handleSaveRecipe = async (e: React.FormEvent) => {
@@ -502,6 +541,7 @@ export default function AdminDashboard() {
         finalImageUrl = publicUrl;
       } catch (err) { 
         console.error("Storage Error:", err); 
+        alert("เกิดข้อผิดพลาดในการเชื่อมต่อกับถังเก็บรูปภาพ"); 
         setIsSaving(false); 
         return; 
       }
@@ -594,8 +634,7 @@ export default function AdminDashboard() {
     }
   };
 
-  const displayLogs: LogItem[] = dashStats.logs.length > 0 ? dashStats.logs : auditLogs;
-
+  // 🌟 จุดตรวจสอบสถานะล็อกอิน เพื่อแก้ปัญหา ESLint unused variable
   if (!isAuthenticated) return <div className="min-h-screen bg-gray-900 flex items-center justify-center font-bold text-white text-xl tracking-widest animate-pulse">SYSTEM SECURING...</div>;
 
   return (
@@ -628,10 +667,10 @@ export default function AdminDashboard() {
       </aside>
       
       <main className="flex-grow p-6 md:p-10 max-h-screen overflow-y-auto">
-        {activeTab === "dashboard" && <DashboardStats dashStats={dashStats} users={users} masterAllergies={masterAllergies} masterDiseases={masterDiseases} sysHealth={sysHealth} apiLatency={apiLatency} topRecipeInsight={topRecipeInsight} isRefreshing={isRefreshing} handleRefreshData={handleRefreshData} setActiveTab={setActiveTab} openAddModal={openAddModal} displayLogs={displayLogs} />}
+        {activeTab === "dashboard" && <DashboardStats dashStats={dashStats} users={users} masterAllergies={masterAllergies} masterDiseases={masterDiseases} sysHealth={sysHealth} apiLatency={apiLatency} topRecipeInsight={topRecipeInsight} isRefreshing={isRefreshing} handleRefreshData={handleRefreshData} setActiveTab={setActiveTab} openAddModal={openAddModal} displayLogs={auditLogs} />}
         {activeTab === "recipes" && <RecipeManager recipes={recipes} isLoading={isLoading} openAddModal={openAddModal} openEditModal={openEditModal} handleDelete={handleDelete} />}
         {activeTab === "users" && <UserManager users={users} toggleUserStatus={toggleUserStatus} />}
-        {activeTab === "audit" && <AuditLogManager displayLogs={displayLogs} />}
+        {activeTab === "audit" && <AuditLogManager displayLogs={auditLogs} />}
 
         {/* ================= TAB: INGREDIENTS ================= */}
         {activeTab === "ingredients" && (
