@@ -2,6 +2,15 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 
+// ลำดับโมเดล: ตัวหลัก -> ตัวสำรองที่คุณระบุ -> ตัวสำรองฉุกเฉินระดับ Production
+const CANDIDATE_MODELS = [
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-1.5-flash", // สำรองฉุกเฉินตัวสุดท้ายกันพลาดตอนขึ้นพรีเซนต์
+];
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export async function POST(req: Request) {
   try {
     const rawKey = process.env.GEMINI_API_KEY;
@@ -11,15 +20,13 @@ export async function POST(req: Request) {
 
     const apiKey = rawKey.trim();
     const genAI = new GoogleGenerativeAI(apiKey);
-    
+
     const body = await req.json();
-    const { ingredients, healthConditions = [] } = body; 
+    const { ingredients, healthConditions = [] } = body;
 
     if (!ingredients) {
       return NextResponse.json({ error: "กรุณาระบุวัตถุดิบ" }, { status: 400 });
     }
-
-    const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
 
     const prompt = `
       คุณคือเชฟระดับมิชลินสตาร์และนักโภชนาการ
@@ -49,13 +56,57 @@ export async function POST(req: Request) {
       }
     `;
 
-    console.log("🚀 กำลังส่งคำสั่งไปหา Gemini (คิดสูตร + ของทดแทน + ตรวจสุขภาพ)...");
-    const result = await model.generateContent(prompt);
-    
-    const text = result.response.text();
-    console.log("✅ AI ตอบกลับมาแล้ว (ดิบ):", text);
+    let responseText = "";
+    let lastError: unknown = null;
 
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    // วนลูปโมเดลหลัก -> โมเดลสำรอง
+    for (const modelName of CANDIDATE_MODELS) {
+      const maxRetries = 2; // ลองซ้ำ 2 รอบต่อโมเดล
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`🚀 กำลังเรียกโมเดล [${modelName}] (รอบที่ ${attempt})...`);
+          const model = genAI.getGenerativeModel({ model: modelName });
+          const result = await model.generateContent(prompt);
+          
+          responseText = result.response.text();
+          console.log(`✅ โมเดล [${modelName}] ประมวลผลสำเร็จ`);
+          break; // สำเร็จแล้ว ออกจากลูป Retry ทันที
+        } catch (err: unknown) {
+          lastError = err;
+          const errMsg = err instanceof Error ? err.message : String(err);
+          const is503 =
+            errMsg.includes("503") ||
+            errMsg.includes("Service Unavailable") ||
+            errMsg.includes("high demand");
+
+          // หากเจอ 503 และยังไม่ครบจำนวน Retry ให้พักรอ 1.5 วินาทีแล้วลองใหม่
+          if (is503 && attempt < maxRetries) {
+            console.warn(`⚠️ [${modelName}] ติด 503 คิวยาว รอ 1.5 วินาทีเพื่อลองใหม่...`);
+            await sleep(1500 * attempt);
+            continue;
+          }
+
+          // หากเป็น Error ประเภท Key ผิด (400/401) ให้ตัดจบ แจ้งเตือนทันที ไม่ต้องวนลูป
+          if (!is503) {
+            throw err;
+          }
+
+          console.warn(`🔄 [${modelName}] ไม่พร้อมใช้งาน กำลังสลับไปใช้โมเดลสำรองถัดไป...`);
+          break; // สลับไปลองโมเดลตัวถัดไปใน CANDIDATE_MODELS
+        }
+      }
+
+      if (responseText) break; // ได้ผลลัพธ์แล้ว ไม่ต้องเรียกโมเดลอื่นต่อ
+    }
+
+    if (!responseText) {
+      throw lastError || new Error("ระบบ AI ขัดข้อง ไม่สามารถประมวลผลได้");
+    }
+
+    console.log("✅ AI ตอบกลับมาแล้ว (ดิบ):", responseText);
+
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       throw new Error("AI ไม่ได้ส่ง JSON กลับมา");
     }
