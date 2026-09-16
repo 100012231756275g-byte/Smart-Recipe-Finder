@@ -1,7 +1,7 @@
 // app/recipe/[name]/page.tsx
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@supabase/supabase-js"; 
 import { checkIngredientsSafety } from "@/lib/healthRules";
@@ -48,8 +48,17 @@ const diseaseRiskMap: Record<string, string[]> = {
   "โรคเกาต์": ["ไก่", "เป็ด", "เครื่องใน", "กะปิ", "ชะอม", "กระถิน", "หน่อไม้", "เห็ด", "ยอดผัก"]
 };
 
-// 💡 พจนานุกรมวัตถุดิบทดแทนอัจฉริยะ (ตรวจจับกับของในตู้เย็นจริง)
+// 💡 พจนานุกรมวัตถุดิบทดแทนอัจฉริยะ
 const smartSubstituteDictionary: Record<string, SubstituteRule> = {
+  "เป็ด": { substitutes: ["ไก่", "หมูกรอบ", "หมูแดง", "เนื้อ"], note: "ใช้เนื้อสัตว์อื่นแทนเนื้อเป็ดได้" },
+  "เป็ดย่าง": { substitutes: ["ไก่ย่าง", "ไก่ต้ม", "หมูกรอบ", "หมูแดง"], note: "ใช้เนื้อสัตว์ย่างหรือต้มอื่นแทนได้" },
+  "ข้าวสวย": { substitutes: ["ข้าวกล้อง", "ข้าวเหนียว", "เส้นหมี่"], note: "ใช้คาร์โบไฮเดรตอื่นแทนได้" },
+  "คะน้า": { substitutes: ["กวางตุ้ง", "ผักบุ้ง", "กะหล่ำปลี", "บรอกโคลี"], note: "ใช้ผักใบเขียวลวกแทนได้" },
+  "ขิงดอง": { substitutes: ["ขิง", "แตงกวา", "ต้นหอม"], note: "ใช้เครื่องเคียงตัดเลี่ยนแทนได้" },
+  "ซีอิ๊วดำ": { substitutes: ["ซีอิ๊วขาว", "ซอสปรุงรส", "น้ำมันหอย"], note: "ให้รสเค็มหวานและสีสันแทนได้" },
+  "น้ำราดเป็ด": { substitutes: ["ซอสปรุงรส", "น้ำมันหอย", "ซีอิ๊วขาว"], note: "ปรุงซอสราดแบบง่ายแทนได้" },
+  "พริกชี้ฟ้า": { substitutes: ["พริกขี้หนู", "พริกป่น", "พริกแห้ง"], note: "ให้รสเผ็ดแทนได้" },
+  "น้ำส้มสายชู": { substitutes: ["มะนาว", "มะขามเปียก"], note: "ให้รสเปรี้ยวตัดเลี่ยนแทนได้" },
   "ข่า": { substitutes: ["ขิง", "กระชาย"], note: "ให้รสเผ็ดร้อนและกลิ่นดับคาวใกล้เคียง" },
   "มะนาว": { substitutes: ["มะขามเปียก", "น้ำส้มสายชู", "เลมอน"], note: "ให้รสเปรี้ยวแทนได้" },
   "กะทิ": { substitutes: ["นมสด", "นมจืด", "นมข้นจืด", "นมถั่วเหลือง"], note: "ให้ความหอมมันแทนได้" },
@@ -100,8 +109,64 @@ function RecipeDetailContent() {
   const [imageError, setImageError] = useState(false);
   const [isWarningOpen, setIsWarningOpen] = useState(false);
 
+  // ฟังก์ชันอ่านข้อมูลจากตู้เย็นแบบ Real-time
+  const loadFridgeData = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const savedFridgeStr =
+      localStorage.getItem("myFridgeItems") ||
+      localStorage.getItem("fridge") ||
+      localStorage.getItem("fridgeIngredients") ||
+      localStorage.getItem("myFridge") ||
+      localStorage.getItem("selectedIngredients");
+
+    if (savedFridgeStr) {
+      try {
+        const parsed = JSON.parse(savedFridgeStr);
+        if (Array.isArray(parsed)) {
+          const names = parsed
+            .filter((item: string | StoredFridgeItem) => 
+              typeof item === "string" || item.daysLeft === undefined || item.daysLeft >= 0
+            )
+            .map((item: string | StoredFridgeItem) => 
+              typeof item === "string" ? item.trim() : (item?.name || "").trim()
+            )
+            .filter(Boolean);
+          setUserFridge(names);
+          return;
+        }
+      } catch {
+        setUserFridge(savedFridgeStr.split(",").map(i => i.trim()).filter(Boolean));
+        return;
+      }
+    }
+    setUserFridge([]);
+  }, []);
+
+  // ฟังก์ชันจำลองของในตู้เย็นสำหรับกดทดสอบเดโมหน้างาน
+  const handleLoadDemoFridge = () => {
+    const demoItems = [
+      { id: "1", name: "ข้าวสวย", amount: "1 ถ้วย", icon: "🍚", daysLeft: 2, expiryDateText: "2 วัน" },
+      { id: "2", name: "ไก่", amount: "300 กรัม", icon: "🍗", daysLeft: 3, expiryDateText: "3 วัน" },
+      { id: "3", name: "ซีอิ๊วขาว", amount: "1 ขวด", icon: "🍶", daysLeft: 30, expiryDateText: "30 วัน" },
+      { id: "4", name: "กวางตุ้ง", amount: "1 กำ", icon: "🥬", daysLeft: 4, expiryDateText: "4 วัน" },
+      { id: "5", name: "ขิง", amount: "1 แง่ง", icon: "🫚", daysLeft: 7, expiryDateText: "7 วัน" }
+    ];
+    localStorage.setItem("myFridgeItems", JSON.stringify(demoItems));
+    localStorage.setItem("fridge", JSON.stringify(demoItems));
+    loadFridgeData();
+    window.dispatchEvent(new Event("fridgeUpdated"));
+  };
+
   useEffect(() => {
+    // 1. ผูก Event Listener ดักจับการอัปเดตตู้เย็น
+    window.addEventListener("fridgeUpdated", loadFridgeData);
+    window.addEventListener("storage", loadFridgeData);
+    window.addEventListener("focus", loadFridgeData);
+
+    // 2. เรียกโหลดข้อมูลใน setTimeout เพื่อป้องกัน Warning set-state-in-effect
     const timer = setTimeout(() => {
+      loadFridgeData();
+
       const loggedIn = sessionStorage.getItem("isLoggedIn") === "true";
       setIsUserLoggedIn(loggedIn);
 
@@ -125,33 +190,6 @@ function RecipeDetailContent() {
 
       const savedAge = localStorage.getItem("userAge");
       if (savedAge) setUserAge(parseInt(savedAge, 10));
-
-      // ดึงข้อมูลตู้เย็นแบบ Type-safe ปราศจาก any
-      const savedFridgeStr =
-        localStorage.getItem("myFridgeItems") ||
-        localStorage.getItem("fridge") ||
-        localStorage.getItem("fridgeIngredients") ||
-        localStorage.getItem("myFridge") ||
-        localStorage.getItem("selectedIngredients");
-
-      if (savedFridgeStr) {
-        try {
-          const parsed = JSON.parse(savedFridgeStr);
-          if (Array.isArray(parsed)) {
-            const names = parsed
-              .filter((item: string | StoredFridgeItem) => 
-                typeof item === "string" || item.daysLeft === undefined || item.daysLeft >= 0
-              )
-              .map((item: string | StoredFridgeItem) => 
-                typeof item === "string" ? item.trim() : (item?.name || "").trim()
-              )
-              .filter(Boolean);
-            setUserFridge(names);
-          }
-        } catch {
-          setUserFridge(savedFridgeStr.split(",").map(i => i.trim()).filter(Boolean));
-        }
-      }
     }, 0);
 
     const loadRecipe = async () => {
@@ -207,8 +245,14 @@ function RecipeDetailContent() {
     };
 
     if (params) loadRecipe();
-    return () => clearTimeout(timer);
-  }, [params]);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("fridgeUpdated", loadFridgeData);
+      window.removeEventListener("storage", loadFridgeData);
+      window.removeEventListener("focus", loadFridgeData);
+    };
+  }, [params, loadFridgeData]);
 
   useEffect(() => {
     const checkFavoriteStatus = async () => {
@@ -323,7 +367,6 @@ function RecipeDetailContent() {
     }
   };
 
-  // ดัก Guard หน้าโหลดและหน้าสุ่มก่อน เพื่อป้องกัน TypeError ตอน Render
   if (isLoading && allRecipesList.length === 0) {
     return <div className="min-h-screen flex items-center justify-center font-bold text-gray-500 text-xl bg-gray-50">กำลังเตรียมระบบสูตรอาหาร... 🍳</div>;
   }
@@ -361,24 +404,21 @@ function RecipeDetailContent() {
     );
   }
 
-  // --- ผ่านการตรวจสอบแล้วว่า recipe มีข้อมูลแน่นอน 100% จึงเริ่มคำนวณ ---
-
+  // --- ตรรกะตรวจสอบวัตถุดิบกับตู้เย็น (ทำงานเสมอ) ---
   const getFridgeItemStatus = (ingName: string) => {
-    if (userFridge.length === 0) {
-      return { status: "no_fridge_data", badge: "ยังไม่ได้ระบุของในตู้เย็น", subItem: null, note: null };
-    }
-
     const cleanIng = ingName.toLowerCase();
 
+    // 1. ตรวจว่ามีในตู้เย็นหรือไม่
     const directMatch = userFridge.find(fItem => {
       const cleanF = fItem.toLowerCase();
       return cleanIng.includes(cleanF) || cleanF.includes(cleanIng);
     });
 
     if (directMatch) {
-      return { status: "available", badge: "มีในตู้เย็นแล้ว 🧊", subItem: null, note: null };
+      return { status: "available", badge: "มีในตู้เย็นแล้ว 🧊", subItem: directMatch, note: null };
     }
 
+    // 2. ตรวจว่าในตู้เย็นมีของที่ใช้ทดแทนได้หรือไม่
     for (const [key, rule] of Object.entries(smartSubstituteDictionary)) {
       if (cleanIng.includes(key.toLowerCase())) {
         const availableSub = rule.substitutes.find(subCandidate =>
@@ -391,7 +431,7 @@ function RecipeDetailContent() {
         if (availableSub) {
           return {
             status: "substitute",
-            badge: `ในตู้เย็นมี "${availableSub}" ใช้แทนได้ 💡`,
+            badge: `ในตู้เย็นมี "${availableSub}" แทนได้ 💡`,
             subItem: availableSub,
             note: rule.note
           };
@@ -399,6 +439,7 @@ function RecipeDetailContent() {
       }
     }
 
+    // 3. ไม่มีของ และไม่มีตัวทดแทนในตู้เย็น
     return { status: "missing", badge: "ไม่มีในตู้เย็น (ของขาด) ❌", subItem: null, note: null };
   };
 
@@ -422,7 +463,7 @@ function RecipeDetailContent() {
       readyItems.push(ing);
     } else if (check.status === "substitute") {
       substituteItems.push({ missing: ing, replaceWith: check.subItem || "", note: check.note || "" });
-    } else if (check.status === "missing") {
+    } else {
       missingItems.push(ing);
     }
   });
@@ -567,11 +608,12 @@ function RecipeDetailContent() {
         <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 p-6 md:p-8">
           <div className="flex flex-col md:flex-row gap-8 mb-8">
             <div className="relative w-full md:w-1/2 h-64 bg-gray-100 rounded-3xl overflow-hidden shadow-sm flex items-center justify-center">
-              {userFridge.length > 0 && (
-                <div className="absolute top-4 right-4 z-20 bg-[#f26522] text-white text-xs font-black px-3 py-1.5 rounded-full shadow-md">
-                  🧊 ตู้เย็นพร้อม {readyPercentage}%
-                </div>
-              )}
+              <div className={`absolute top-4 right-4 z-20 text-white text-xs font-black px-3.5 py-1.5 rounded-full shadow-md ${
+                readyPercentage >= 70 ? "bg-emerald-500" : readyPercentage > 0 ? "bg-amber-500" : "bg-red-500"
+              }`}>
+                🧊 ตู้เย็นพร้อม {readyPercentage}%
+              </div>
+
               {!imageLoaded && !imageError && (
                 <div className="absolute flex flex-col items-center justify-center text-gray-400">
                   <div className="animate-spin rounded-full h-8 w-8 border-4 border-[#f26522] border-t-transparent mb-2"></div>
@@ -617,64 +659,75 @@ function RecipeDetailContent() {
             </div>
           </div>
 
-          {/* การ์ดสรุปสถานะเชื่อมต่อตู้เย็น (ของขาด & ของทดแทนในตู้เย็น) */}
-          {userFridge.length > 0 && (
-            <div className="mb-8 p-5 rounded-2xl border transition-all bg-[#fffaf5] border-orange-200 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xl">🧊</span>
-                  <h3 className="font-extrabold text-sm sm:text-base text-gray-900">
-                    สถานะวัตถุดิบในตู้เย็นของคุณ ({readyItems.length + substituteItems.length}/{rawIngredients.length})
-                  </h3>
-                </div>
+          {/* การ์ดสรุปการเชื่อมต่อตู้เย็น */}
+          <div className="mb-8 p-5 rounded-2xl border transition-all bg-[#fffaf5] border-orange-200 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🧊</span>
+                <h3 className="font-extrabold text-sm sm:text-base text-gray-900">
+                  สถานะวัตถุดิบกับตู้เย็นของคุณ ({readyItems.length + substituteItems.length}/{rawIngredients.length})
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
                 <button
+                  type="button"
+                  onClick={handleLoadDemoFridge}
+                  className="text-[11px] font-bold bg-orange-100 hover:bg-orange-200 text-orange-800 px-2.5 py-1 rounded-lg transition-colors border border-orange-200"
+                  title="คลิกเพื่อจำลองของในตู้เย็นสำหรับพรีเซนต์สด"
+                >
+                  ⚡ จำลองของในตู้เย็น (Demo)
+                </button>
+                <button
+                  type="button"
                   onClick={() => router.push("/my-fridge")}
                   className="text-xs font-bold text-[#f26522] hover:underline"
                 >
-                  ไปที่ตู้เย็นของฉัน →
+                  ไปตู้เย็นของฉัน →
                 </button>
               </div>
-
-              {missingItems.length > 0 && (
-                <div className="text-red-600 font-bold text-xs sm:text-sm mb-2.5 flex items-start gap-1.5">
-                  <span className="shrink-0 mt-0.5">❌</span>
-                  <span><strong>ของที่ขาดในตู้เย็น:</strong> {missingItems.join(", ")}</span>
-                </div>
-              )}
-
-              {substituteItems.length > 0 && (
-                <div className="mt-3 p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1.5">
-                  <div className="text-amber-900 font-extrabold text-xs flex items-center gap-1.5">
-                    <span>💡</span> มีวัตถุดิบในตู้เย็นที่นำมาใช้ทดแทนได้:
-                  </div>
-                  {substituteItems.map((sub, idx) => (
-                    <p key={idx} className="text-xs text-amber-950 leading-relaxed">
-                      • เมนูนี้ต้องใช้ <strong>{sub.missing}</strong> แต่ในตู้เย็นมี <strong>&quot;{sub.replaceWith}&quot;</strong> ({sub.note})
-                    </p>
-                  ))}
-                </div>
-              )}
-
-              {missingItems.length === 0 && substituteItems.length === 0 && (
-                <div className="text-emerald-600 font-extrabold text-xs sm:text-sm flex items-center gap-1.5">
-                  <span>🎉</span> วัตถุดิบในตู้เย็นของคุณครบถ้วน พร้อมเริ่มทำอาหารได้ทันที!
-                </div>
-              )}
             </div>
-          )}
 
-          {/* รายการวัตถุดิบที่ต้องใช้ พร้อมป้ายสถานะตู้เย็น */}
+            {userFridge.length === 0 && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-semibold mb-2">
+                ⚠️ ตู้เย็นของคุณยังไม่มีรายการวัตถุดิบที่บันทึกไว้ (ระบบแสดงสถานะของขาดทั้งหมด {rawIngredients.length} รายการ) 
+                <br className="hidden sm:inline" /> สามารถกดปุ่ม <strong>&quot;⚡ จำลองของในตู้เย็น (Demo)&quot;</strong> ด้านบน หรือไปเพิ่มของที่หน้าตู้เย็นได้เลยครับ
+              </div>
+            )}
+
+            {missingItems.length > 0 && (
+              <div className="text-red-600 font-bold text-xs sm:text-sm mb-2.5 flex items-start gap-1.5">
+                <span className="shrink-0 mt-0.5">❌</span>
+                <span><strong>ของที่ขาดในตู้เย็น ({missingItems.length} อย่าง):</strong> {missingItems.join(", ")}</span>
+              </div>
+            )}
+
+            {substituteItems.length > 0 && (
+              <div className="mt-3 p-3.5 bg-amber-50/90 border border-amber-200 rounded-xl space-y-1.5">
+                <div className="text-amber-900 font-extrabold text-xs flex items-center gap-1.5">
+                  <span>💡</span> ตรวจพบของในตู้เย็นที่ใช้ทดแทนได้:
+                </div>
+                {substituteItems.map((sub, idx) => (
+                  <p key={idx} className="text-xs text-amber-950 leading-relaxed">
+                    • ขาด <strong>{sub.missing}</strong> แต่ในตู้เย็นมี <strong>&quot;{sub.replaceWith}&quot;</strong> ({sub.note})
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {userFridge.length > 0 && missingItems.length === 0 && (
+              <div className="text-emerald-600 font-extrabold text-xs sm:text-sm flex items-center gap-1.5">
+                <span>🎉</span> วัตถุดิบในตู้เย็นของคุณพร้อมครบถ้วน สามารถลงมือทำอาหารได้ทันที!
+              </div>
+            )}
+          </div>
+
+          {/* รายการวัตถุดิบที่ต้องใช้ */}
           <div className="mb-10">
             <div className="flex items-center justify-between mb-4 border-l-4 border-[#f26522] pl-3">
               <h2 className="text-xl font-bold text-gray-800">📋 วัตถุดิบที่ต้องใช้</h2>
-              {userFridge.length === 0 && (
-                <button
-                  onClick={() => router.push("/my-fridge")}
-                  className="text-xs font-bold text-[#f26522] bg-orange-50 px-3 py-1.5 rounded-lg border border-orange-200 hover:bg-orange-100 transition-colors"
-                >
-                  + ซิงค์ของจากตู้เย็น
-                </button>
-              )}
+              <span className="text-xs text-gray-500 font-medium">
+                {userFridge.length > 0 ? `เช็คอัตโนมัติจากของในตู้เย็น (${userFridge.length} รายการ)` : "ยังไม่มีข้อมูลในตู้เย็น"}
+              </span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -688,12 +741,10 @@ function RecipeDetailContent() {
                     key={i}
                     className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between gap-2 shadow-xs ${
                       fridgeStatus.status === "available"
-                        ? "bg-emerald-50/50 border-emerald-200/80"
+                        ? "bg-emerald-50/60 border-emerald-300"
                         : fridgeStatus.status === "substitute"
-                        ? "bg-amber-50/60 border-amber-200"
-                        : fridgeStatus.status === "missing"
-                        ? "bg-red-50/50 border-red-200"
-                        : "bg-gray-50 border-gray-100"
+                        ? "bg-amber-50/70 border-amber-300"
+                        : "bg-red-50/60 border-red-300"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -703,9 +754,7 @@ function RecipeDetailContent() {
                             ? "bg-emerald-500"
                             : fridgeStatus.status === "substitute"
                             ? "bg-amber-500"
-                            : fridgeStatus.status === "missing"
-                            ? "bg-red-500"
-                            : "bg-[#f26522]"
+                            : "bg-red-500"
                         }`} />
                         <span className={`text-sm font-extrabold ${
                           isAllergy
@@ -720,22 +769,20 @@ function RecipeDetailContent() {
                         </span>
                       </div>
 
-                      {userFridge.length > 0 && (
-                        <span className={`text-[11px] font-black px-2 py-0.5 rounded-lg shrink-0 border ${
-                          fridgeStatus.status === "available"
-                            ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                            : fridgeStatus.status === "substitute"
-                            ? "bg-amber-100 text-amber-900 border-amber-300"
-                            : "bg-red-100 text-red-700 border-red-200"
-                        }`}>
-                          {fridgeStatus.badge}
-                        </span>
-                      )}
+                      <span className={`text-[11px] font-black px-2 py-0.5 rounded-lg shrink-0 border shadow-2xs ${
+                        fridgeStatus.status === "available"
+                          ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                          : fridgeStatus.status === "substitute"
+                          ? "bg-amber-100 text-amber-900 border-amber-300"
+                          : "bg-red-100 text-red-700 border-red-300"
+                      }`}>
+                        {fridgeStatus.badge}
+                      </span>
                     </div>
 
                     {fridgeStatus.status === "substitute" && fridgeStatus.note && (
-                      <p className="text-[11px] font-medium text-amber-900 bg-amber-100/60 px-2.5 py-1 rounded-lg">
-                        💡 ในตู้เย็นมี <strong>{fridgeStatus.subItem}</strong>: {fridgeStatus.note}
+                      <p className="text-[11px] font-medium text-amber-950 bg-amber-100/70 px-2.5 py-1 rounded-lg">
+                        💡 ในตู้เย็นมี <strong>&quot;{fridgeStatus.subItem}&quot;</strong>: {fridgeStatus.note}
                       </p>
                     )}
                   </div>
@@ -775,7 +822,6 @@ function RecipeDetailContent() {
               
               {(() => {
                 const fromPage = searchParams.get("from") || "/recipe1";
-                
                 let buttonLabel = "กลับไปหน้าสุ่มเมนู"; 
                 if (fromPage.includes("/search-ingredients")) {
                   buttonLabel = "กลับไปหน้าผสมวัตถุดิบ";
