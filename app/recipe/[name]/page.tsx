@@ -28,6 +28,16 @@ interface SavedItem {
   viewedAt?: number;
 }
 
+interface StoredFridgeItem {
+  name?: string;
+  daysLeft?: number;
+}
+
+interface SubstituteRule {
+  substitutes: string[];
+  note: string;
+}
+
 const diseaseRiskMap: Record<string, string[]> = {
   "โรคเบาหวาน": ["น้ำตาล", "นมข้น", "กะทิ", "น้ำเชื่อม", "น้ำผึ้ง"],
   "โรคความดันโลหิตสูง": ["น้ำปลา", "เกลือ", "ซีอิ๊ว", "ผงชูรส", "กะปิ", "เต้าเจี้ยว", "ซอสหอยนางรม"],
@@ -38,12 +48,7 @@ const diseaseRiskMap: Record<string, string[]> = {
   "โรคเกาต์": ["ไก่", "เป็ด", "เครื่องใน", "กะปิ", "ชะอม", "กระถิน", "หน่อไม้", "เห็ด", "ยอดผัก"]
 };
 
-// 💡 ฐานข้อมูลวัตถุดิบทดแทนอัจฉริยะ (ตรวจจับกับของในตู้เย็นจริง)
-interface SubstituteRule {
-  substitutes: string[];
-  note: string;
-}
-
+// 💡 พจนานุกรมวัตถุดิบทดแทนอัจฉริยะ (ตรวจจับกับของในตู้เย็นจริง)
 const smartSubstituteDictionary: Record<string, SubstituteRule> = {
   "ข่า": { substitutes: ["ขิง", "กระชาย"], note: "ให้รสเผ็ดร้อนและกลิ่นดับคาวใกล้เคียง" },
   "มะนาว": { substitutes: ["มะขามเปียก", "น้ำส้มสายชู", "เลมอน"], note: "ให้รสเปรี้ยวแทนได้" },
@@ -116,12 +121,12 @@ function RecipeDetailContent() {
       if (savedBMIStatus) setUserBMIStatus(savedBMIStatus);
       
       const savedTDEE = localStorage.getItem("userTDEE");
-      if (savedTDEE) setUserTDEE(parseInt(savedTDEE));
+      if (savedTDEE) setUserTDEE(parseInt(savedTDEE, 10));
 
       const savedAge = localStorage.getItem("userAge");
-      if (savedAge) setUserAge(parseInt(savedAge));
+      if (savedAge) setUserAge(parseInt(savedAge, 10));
 
-      // 🧊 ดึงข้อมูลวัตถุดิบจากตู้เย็นจริงของผู้ใช้ (รองรับทั้ง myFridgeItems และ fridge)
+      // ดึงข้อมูลตู้เย็นแบบ Type-safe ปราศจาก any
       const savedFridgeStr =
         localStorage.getItem("myFridgeItems") ||
         localStorage.getItem("fridge") ||
@@ -134,8 +139,12 @@ function RecipeDetailContent() {
           const parsed = JSON.parse(savedFridgeStr);
           if (Array.isArray(parsed)) {
             const names = parsed
-              .filter((item: any) => typeof item === "string" || item.daysLeft === undefined || item.daysLeft >= 0)
-              .map((item: any) => (typeof item === "string" ? item.trim() : (item?.name || "").trim()))
+              .filter((item: string | StoredFridgeItem) => 
+                typeof item === "string" || item.daysLeft === undefined || item.daysLeft >= 0
+              )
+              .map((item: string | StoredFridgeItem) => 
+                typeof item === "string" ? item.trim() : (item?.name || "").trim()
+              )
               .filter(Boolean);
             setUserFridge(names);
           }
@@ -244,9 +253,9 @@ function RecipeDetailContent() {
     let pool = allRecipesList;
 
     if (isHalalMode) {
-      pool = allRecipesList.filter(recipe => {
-        const isNameNonHalal = nonHalalKeywords.some(keyword => recipe.name.includes(keyword));
-        const hasNonHalalIngredient = recipe.ingredients?.some(ing => 
+      pool = allRecipesList.filter(r => {
+        const isNameNonHalal = nonHalalKeywords.some(keyword => r.name.includes(keyword));
+        const hasNonHalalIngredient = r.ingredients?.some(ing => 
           nonHalalKeywords.some(keyword => ing.includes(keyword))
         );
         return !isNameNonHalal && !hasNonHalalIngredient;
@@ -279,7 +288,7 @@ function RecipeDetailContent() {
     
     if (!recipe) return;
 
-    const kcalNumber = recipe.kcal ? parseInt(recipe.kcal.replace(/\D/g, '')) : 0;
+    const kcalNumber = recipe.kcal ? parseInt(recipe.kcal.replace(/\D/g, ''), 10) : 0;
 
     try {
       if (isFavorite) {
@@ -314,140 +323,7 @@ function RecipeDetailContent() {
     }
   };
 
-  // 🌟 ประมวลผลวัตถุดิบและข้อจำกัดสุขภาพ
-  const bmiNumber = userBMIStatus && (userBMIStatus.includes("อ้วน") || userBMIStatus.includes("ท้วม")) ? 26 : 21;
-  const { safeIngredients } = (recipe && isUserLoggedIn)
-    ? checkIngredientsSafety(recipe.ingredients || [], {
-        allergies: userAllergies,
-        chronicDiseases: userDiseases,
-        bmi: bmiNumber
-      })
-    : { safeIngredients: recipe.ingredients || [] };
-
-  // 🧊 ระบบตรวจสอบวัตถุดิบกับตู้เย็นแบบละเอียด (Direct / Substitute / Missing)
-  const getFridgeItemStatus = (ingName: string) => {
-    if (userFridge.length === 0) {
-      return { status: "no_fridge_data", badge: "ยังไม่ได้ระบุของในตู้เย็น", subItem: null, note: null };
-    }
-
-    const cleanIng = ingName.toLowerCase();
-
-    // 1. ตรวจว่ามีในตู้เย็นหรือไม่
-    const directMatch = userFridge.find(fItem => {
-      const cleanF = fItem.toLowerCase();
-      return cleanIng.includes(cleanF) || cleanF.includes(cleanIng);
-    });
-
-    if (directMatch) {
-      return { status: "available", badge: "มีในตู้เย็นแล้ว 🧊", subItem: null, note: null };
-    }
-
-    // 2. ตรวจว่าในตู้เย็นมีของที่ใช้ทดแทนได้หรือไม่
-    for (const [key, rule] of Object.entries(smartSubstituteDictionary)) {
-      if (cleanIng.includes(key.toLowerCase())) {
-        const availableSub = rule.substitutes.find(subCandidate =>
-          userFridge.some(fItem => {
-            const cleanF = fItem.toLowerCase();
-            return cleanF.includes(subCandidate.toLowerCase()) || subCandidate.toLowerCase().includes(cleanF);
-          })
-        );
-
-        if (availableSub) {
-          return {
-            status: "substitute",
-            badge: `ในตู้เย็นมี "${availableSub}" ใช้แทนได้ 💡`,
-            subItem: availableSub,
-            note: rule.note
-          };
-        }
-      }
-    }
-
-    // 3. ไม่มีของ และไม่มีตัวทดแทนในตู้เย็น
-    return { status: "missing", badge: "ไม่มีในตู้เย็น (ของขาด) ❌", subItem: null, note: null };
-  };
-
-  // คำนวณภาพรวมความพร้อมของตู้เย็น
-  const rawIngredients = recipe?.ingredients || [];
-  const readyItems: string[] = [];
-  const substituteItems: { missing: string; replaceWith: string; note: string }[] = [];
-  const missingItems: string[] = [];
-
-  rawIngredients.forEach((ing) => {
-    const check = getFridgeItemStatus(ing);
-    if (check.status === "available") {
-      readyItems.push(ing);
-    } else if (check.status === "substitute") {
-      substituteItems.push({ missing: ing, replaceWith: check.subItem || "", note: check.note || "" });
-    } else if (check.status === "missing") {
-      missingItems.push(ing);
-    }
-  });
-
-  const readyPercentage = rawIngredients.length > 0 
-    ? Math.round(((readyItems.length + substituteItems.length) / rawIngredients.length) * 100)
-    : 0;
-
-  let allergicIngredients: string[] = [];
-  const diseaseWarnings: { disease: string; ingredients: string[] }[] = [];
-  let isCalorieOverload = false;
-  let hasFattyIngredients = false;
-  let isUnderweightRecommended = false;
-  const ageWarnings: string[] = [];
-
-  if (isUserLoggedIn && recipe) {
-    allergicIngredients = recipe.ingredients?.filter(ing => userAllergies.some(allergy => ing.includes(allergy))) || [];
-
-    userDiseases.forEach(disease => {
-      const riskyKeywords = diseaseRiskMap[disease] || [];
-      const foundRisks = recipe.ingredients?.filter(ing => riskyKeywords.some(keyword => ing.includes(keyword))) || [];
-      if (foundRisks.length > 0) {
-        diseaseWarnings.push({ disease, ingredients: foundRisks });
-      }
-    });
-
-    if (userAge !== null) {
-      if (userAge < 12) {
-        const isSpicy = spicyKeywords.some(keyword => recipe.name.includes(keyword)) || 
-                        recipe.ingredients?.some(ing => spicyKeywords.some(keyword => ing.includes(keyword)));
-        if (isSpicy) ageWarnings.push("เมนูนี้อาจมีรสเผ็ดหรือเครื่องเทศจัดเกินไปสำหรับวัยเด็กครับ 👶");
-      } else if (userAge >= 60) {
-        const isHard = hardToChewKeywords.some(keyword => recipe.name.includes(keyword)) || 
-                       recipe.ingredients?.some(ing => hardToChewKeywords.some(keyword => ing.includes(keyword)));
-        if (isHard) ageWarnings.push("เมนูนี้มีของทอดกรอบหรือของแข็ง อาจเคี้ยวและย่อยยากสำหรับวัยเก๋าครับ 👴👵");
-      }
-    }
-
-    if (userBMIStatus && userTDEE && recipe.kcal) {
-      const recipeKcal = parseInt(recipe.kcal.replace(/\D/g, '')); 
-      const mealQuota = userTDEE / 3; 
-      
-      const isOverweight = userBMIStatus.includes("อ้วน") || userBMIStatus.includes("ท้วม");
-      const isUnderweight = userBMIStatus.includes("ต่ำกว่าเกณฑ์") || userBMIStatus.includes("ผอม");
-
-      if (isOverweight) {
-        if (!isNaN(recipeKcal) && recipeKcal > mealQuota) isCalorieOverload = true;
-        hasFattyIngredients = recipe.ingredients?.some(ing => 
-          highFatIngredients.some(fat => ing.includes(fat)) || recipe.name.includes("ทอด")
-        ) || false;
-      }
-      
-      if (isUnderweight) {
-        const hasProtein = recipe.ingredients?.some(ing => ing.includes("เนื้อ") || ing.includes("หมู") || ing.includes("ไก่") || ing.includes("ไข่") || ing.includes("ปลา"));
-        if (hasProtein && !isNaN(recipeKcal) && recipeKcal >= (mealQuota * 0.8)) {
-          isUnderweightRecommended = true; 
-        }
-      }
-    }
-  }
-
-  const hasAllergy = allergicIngredients.length > 0;
-  const hasDiseaseRisk = diseaseWarnings.length > 0;
-  const hasAgeWarning = ageWarnings.length > 0;
-  
-  const isSafe = isUserLoggedIn && !hasAllergy && !hasDiseaseRisk && !isCalorieOverload && !hasFattyIngredients && !hasAgeWarning;
-  const hasAnyWarning = hasAllergy || hasDiseaseRisk || isCalorieOverload || hasFattyIngredients || hasAgeWarning;
-
+  // ดัก Guard หน้าโหลดและหน้าสุ่มก่อน เพื่อป้องกัน TypeError ตอน Render
   if (isLoading && allRecipesList.length === 0) {
     return <div className="min-h-screen flex items-center justify-center font-bold text-gray-500 text-xl bg-gray-50">กำลังเตรียมระบบสูตรอาหาร... 🍳</div>;
   }
@@ -484,6 +360,138 @@ function RecipeDetailContent() {
       </div>
     );
   }
+
+  // --- ผ่านการตรวจสอบแล้วว่า recipe มีข้อมูลแน่นอน 100% จึงเริ่มคำนวณ ---
+
+  const getFridgeItemStatus = (ingName: string) => {
+    if (userFridge.length === 0) {
+      return { status: "no_fridge_data", badge: "ยังไม่ได้ระบุของในตู้เย็น", subItem: null, note: null };
+    }
+
+    const cleanIng = ingName.toLowerCase();
+
+    const directMatch = userFridge.find(fItem => {
+      const cleanF = fItem.toLowerCase();
+      return cleanIng.includes(cleanF) || cleanF.includes(cleanIng);
+    });
+
+    if (directMatch) {
+      return { status: "available", badge: "มีในตู้เย็นแล้ว 🧊", subItem: null, note: null };
+    }
+
+    for (const [key, rule] of Object.entries(smartSubstituteDictionary)) {
+      if (cleanIng.includes(key.toLowerCase())) {
+        const availableSub = rule.substitutes.find(subCandidate =>
+          userFridge.some(fItem => {
+            const cleanF = fItem.toLowerCase();
+            return cleanF.includes(subCandidate.toLowerCase()) || subCandidate.toLowerCase().includes(cleanF);
+          })
+        );
+
+        if (availableSub) {
+          return {
+            status: "substitute",
+            badge: `ในตู้เย็นมี "${availableSub}" ใช้แทนได้ 💡`,
+            subItem: availableSub,
+            note: rule.note
+          };
+        }
+      }
+    }
+
+    return { status: "missing", badge: "ไม่มีในตู้เย็น (ของขาด) ❌", subItem: null, note: null };
+  };
+
+  const bmiNumber = userBMIStatus && (userBMIStatus.includes("อ้วน") || userBMIStatus.includes("ท้วม")) ? 26 : 21;
+  const { safeIngredients } = isUserLoggedIn
+    ? checkIngredientsSafety(recipe.ingredients || [], {
+        allergies: userAllergies,
+        chronicDiseases: userDiseases,
+        bmi: bmiNumber
+      })
+    : { safeIngredients: recipe.ingredients || [] };
+
+  const rawIngredients = recipe.ingredients || [];
+  const readyItems: string[] = [];
+  const substituteItems: { missing: string; replaceWith: string; note: string }[] = [];
+  const missingItems: string[] = [];
+
+  rawIngredients.forEach((ing) => {
+    const check = getFridgeItemStatus(ing);
+    if (check.status === "available") {
+      readyItems.push(ing);
+    } else if (check.status === "substitute") {
+      substituteItems.push({ missing: ing, replaceWith: check.subItem || "", note: check.note || "" });
+    } else if (check.status === "missing") {
+      missingItems.push(ing);
+    }
+  });
+
+  const readyPercentage = rawIngredients.length > 0 
+    ? Math.round(((readyItems.length + substituteItems.length) / rawIngredients.length) * 100)
+    : 0;
+
+  let allergicIngredients: string[] = [];
+  const diseaseWarnings: { disease: string; ingredients: string[] }[] = [];
+  let isCalorieOverload = false;
+  let hasFattyIngredients = false;
+  let isUnderweightRecommended = false;
+  const ageWarnings: string[] = [];
+
+  if (isUserLoggedIn) {
+    allergicIngredients = recipe.ingredients?.filter(ing => userAllergies.some(allergy => ing.includes(allergy))) || [];
+
+    userDiseases.forEach(disease => {
+      const riskyKeywords = diseaseRiskMap[disease] || [];
+      const foundRisks = recipe.ingredients?.filter(ing => riskyKeywords.some(keyword => ing.includes(keyword))) || [];
+      if (foundRisks.length > 0) {
+        diseaseWarnings.push({ disease, ingredients: foundRisks });
+      }
+    });
+
+    if (userAge !== null) {
+      if (userAge < 12) {
+        const isSpicy = spicyKeywords.some(keyword => recipe.name.includes(keyword)) || 
+                        recipe.ingredients?.some(ing => spicyKeywords.some(keyword => ing.includes(keyword)));
+        if (isSpicy) ageWarnings.push("เมนูนี้อาจมีรสเผ็ดหรือเครื่องเทศจัดเกินไปสำหรับวัยเด็กครับ 👶");
+      } else if (userAge >= 60) {
+        const isHard = hardToChewKeywords.some(keyword => recipe.name.includes(keyword)) || 
+                       recipe.ingredients?.some(ing => hardToChewKeywords.some(keyword => ing.includes(keyword)));
+        if (isHard) ageWarnings.push("เมนูนี้มีของทอดกรอบหรือของแข็ง อาจเคี้ยวและย่อยยากสำหรับวัยเก๋าครับ 👴👵");
+      }
+    }
+
+    if (userBMIStatus && userTDEE && recipe.kcal) {
+      const recipeKcal = parseInt(recipe.kcal.replace(/\D/g, ''), 10); 
+      const mealQuota = userTDEE / 3; 
+      
+      const isOverweight = userBMIStatus.includes("อ้วน") || userBMIStatus.includes("ท้วม");
+      const isUnderweight = userBMIStatus.includes("ต่ำกว่าเกณฑ์") || userBMIStatus.includes("ผอม");
+
+      if (isOverweight) {
+        if (!isNaN(recipeKcal) && recipeKcal > mealQuota) isCalorieOverload = true;
+        hasFattyIngredients = recipe.ingredients?.some(ing => 
+          highFatIngredients.some(fat => ing.includes(fat)) || recipe.name.includes("ทอด")
+        ) || false;
+      }
+      
+      if (isUnderweight) {
+        const hasProtein = recipe.ingredients?.some(ing => 
+          ing.includes("เนื้อ") || ing.includes("หมู") || ing.includes("ไก่") || ing.includes("ไข่") || ing.includes("ปลา")
+        );
+        if (hasProtein && !isNaN(recipeKcal) && recipeKcal >= (mealQuota * 0.8)) {
+          isUnderweightRecommended = true; 
+        }
+      }
+    }
+  }
+
+  const hasAllergy = allergicIngredients.length > 0;
+  const hasDiseaseRisk = diseaseWarnings.length > 0;
+  const hasAgeWarning = ageWarnings.length > 0;
+  
+  const isSafe = isUserLoggedIn && !hasAllergy && !hasDiseaseRisk && !isCalorieOverload && !hasFattyIngredients && !hasAgeWarning;
+  const hasAnyWarning = hasAllergy || hasDiseaseRisk || isCalorieOverload || hasFattyIngredients || hasAgeWarning;
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans pb-20">
@@ -550,10 +558,15 @@ function RecipeDetailContent() {
           </div>
         )}
 
+        {isUserLoggedIn && isUnderweightRecommended && !hasAllergy && !hasDiseaseRisk && (
+          <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-4 rounded-2xl font-bold mb-6 text-center text-sm shadow-sm flex items-center justify-center gap-2">
+            <span>💪</span> เมนูแนะนำ! สารอาหารและแคลอรี่เหมาะสำหรับช่วยเพิ่มน้ำหนักของคุณครับ
+          </div>
+        )}
+
         <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 p-6 md:p-8">
           <div className="flex flex-col md:flex-row gap-8 mb-8">
             <div className="relative w-full md:w-1/2 h-64 bg-gray-100 rounded-3xl overflow-hidden shadow-sm flex items-center justify-center">
-              {/* Badge แสดงสัดส่วนความพร้อมของตู้เย็น */}
               {userFridge.length > 0 && (
                 <div className="absolute top-4 right-4 z-20 bg-[#f26522] text-white text-xs font-black px-3 py-1.5 rounded-full shadow-md">
                   🧊 ตู้เย็นพร้อม {readyPercentage}%
@@ -604,7 +617,7 @@ function RecipeDetailContent() {
             </div>
           </div>
 
-          {/* 🌟 การ์ดสรุปสถานะเชื่อมต่อตู้เย็น (ของขาด & ของทดแทนในตู้เย็น) */}
+          {/* การ์ดสรุปสถานะเชื่อมต่อตู้เย็น (ของขาด & ของทดแทนในตู้เย็น) */}
           {userFridge.length > 0 && (
             <div className="mb-8 p-5 rounded-2xl border transition-all bg-[#fffaf5] border-orange-200 shadow-sm">
               <div className="flex items-center justify-between mb-3">
@@ -622,7 +635,6 @@ function RecipeDetailContent() {
                 </button>
               </div>
 
-              {/* กรณีที่ 1: ขาดสนิท */}
               {missingItems.length > 0 && (
                 <div className="text-red-600 font-bold text-xs sm:text-sm mb-2.5 flex items-start gap-1.5">
                   <span className="shrink-0 mt-0.5">❌</span>
@@ -630,7 +642,6 @@ function RecipeDetailContent() {
                 </div>
               )}
 
-              {/* กรณีที่ 2: ขาดแต่มีของในตู้เย็นที่ใช้แทนได้ */}
               {substituteItems.length > 0 && (
                 <div className="mt-3 p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1.5">
                   <div className="text-amber-900 font-extrabold text-xs flex items-center gap-1.5">
@@ -644,7 +655,6 @@ function RecipeDetailContent() {
                 </div>
               )}
 
-              {/* กรณีที่ 3: มีของครบทั้งหมด */}
               {missingItems.length === 0 && substituteItems.length === 0 && (
                 <div className="text-emerald-600 font-extrabold text-xs sm:text-sm flex items-center gap-1.5">
                   <span>🎉</span> วัตถุดิบในตู้เย็นของคุณครบถ้วน พร้อมเริ่มทำอาหารได้ทันที!
@@ -653,7 +663,7 @@ function RecipeDetailContent() {
             </div>
           )}
 
-          {/* 📋 รายการวัตถุดิบที่ต้องใช้ พร้อมป้ายสถานะตู้เย็นแบบเรียลไทม์ */}
+          {/* รายการวัตถุดิบที่ต้องใช้ พร้อมป้ายสถานะตู้เย็น */}
           <div className="mb-10">
             <div className="flex items-center justify-between mb-4 border-l-4 border-[#f26522] pl-3">
               <h2 className="text-xl font-bold text-gray-800">📋 วัตถุดิบที่ต้องใช้</h2>
@@ -710,7 +720,6 @@ function RecipeDetailContent() {
                         </span>
                       </div>
 
-                      {/* Badge ป้ายสถานะตู้เย็น */}
                       {userFridge.length > 0 && (
                         <span className={`text-[11px] font-black px-2 py-0.5 rounded-lg shrink-0 border ${
                           fridgeStatus.status === "available"
@@ -724,7 +733,6 @@ function RecipeDetailContent() {
                       )}
                     </div>
 
-                    {/* ข้อความแนะนำเพิ่มเติมเมื่อมีของทดแทนในตู้เย็น */}
                     {fridgeStatus.status === "substitute" && fridgeStatus.note && (
                       <p className="text-[11px] font-medium text-amber-900 bg-amber-100/60 px-2.5 py-1 rounded-lg">
                         💡 ในตู้เย็นมี <strong>{fridgeStatus.subItem}</strong>: {fridgeStatus.note}
@@ -736,7 +744,7 @@ function RecipeDetailContent() {
             </div>
           </div>
 
-          {/* 👨‍🍳 ขั้นตอนการทำอาหาร */}
+          {/* ขั้นตอนการทำอาหาร */}
           <div className="mb-12">
             <h2 className="text-xl font-bold text-gray-800 mb-5 border-l-4 border-green-500 pl-3">👨‍🍳 ขั้นตอนการทำอาหาร</h2>
             <div className="flex flex-col gap-5">
