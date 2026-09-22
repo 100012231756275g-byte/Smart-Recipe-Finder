@@ -1,8 +1,7 @@
-// app/api/analyze-food/route.ts
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// 🌟 1. ขยายเวลา Timeout ของ Vercel เป็น 30 วินาที ป้องกัน Serverless ตัดการทำงาน
+// ขยายเวลา Timeout เป็น 30 วินาที ป้องกัน Serverless ตัดการทำงานระหว่างรับภาพ
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
@@ -10,8 +9,7 @@ export async function POST(req: Request) {
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      console.error("❌ ไม่พบ API Key ใน Environment Variables");
-      return NextResponse.json({ error: 'ไม่พบการตั้งค่า GEMINI_API_KEY' }, { status: 500 });
+      return NextResponse.json({ error: 'ไม่พบ GEMINI_API_KEY' }, { status: 500 });
     }
 
     const { imageBase64, mimeType } = await req.json();
@@ -22,7 +20,7 @@ export async function POST(req: Request) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
 
-    // 🌟 2. กำหนด responseMimeType: "application/json" ป้องกันโมเดลตอบติด Markdown
+    // เปลี่ยนจาก gemini-1.5-flash ที่ถูกถอดไปแล้ว เป็นโมเดลปัจจุบัน
     const model = genAI.getGenerativeModel({
       model: 'gemini-3.6-flash',
       generationConfig: {
@@ -56,13 +54,11 @@ export async function POST(req: Request) {
 
     const result = await model.generateContent([prompt, ...imageParts]);
     const responseText = result.response.text();
-
-    // แปลงผลลัพธ์เป็น JSON ทันที
     const nutritionData = JSON.parse(responseText.trim());
 
     return NextResponse.json(nutritionData);
 
- } catch (error) {
+  } catch (error) {
     console.error('❌ Gemini API Error:', error);
     return NextResponse.json(
       {
