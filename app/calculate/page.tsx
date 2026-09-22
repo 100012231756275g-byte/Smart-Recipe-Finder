@@ -407,13 +407,13 @@ export default function CalculatePage() {
     }, 800);
   };
 
-const handleSaveToDiary = () => {
+  const handleSaveToDiary = () => {
     if (!editableResult || !originalResult) return;
     const saveMethod = editableResult.calories !== originalResult.calories ? 'manual_edit' : 'ai_vision';
     
     // eslint-disable-next-line react-hooks/purity
     const currentId = Date.now().toString();
-
+   
     const currentTime = new Date().toISOString();
 
     const newLogEntry = {
@@ -489,7 +489,9 @@ const handleSaveToDiary = () => {
       return;
     }
 
+    
     const currentId = Date.now().toString();
+   
     const currentTime = new Date().toISOString();
 
     const newLogEntry = {
@@ -579,16 +581,8 @@ const handleSaveToDiary = () => {
         {activeMode === "ai" && (
           <>
             {!previewUrl ? (
-              /* แก้ไข: ใช้ label ครอบ input เพื่อให้เบราว์เซอร์มือถือยอมเปิดกล้องหรือคลังรูป 100% */
-              <label 
-                htmlFor="food-camera-uploader"
-                onDragOver={onDragOver} 
-                onDragLeave={onDragLeave} 
-                onDrop={onDrop}
-                className={`bg-white w-full rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center p-12 text-center cursor-pointer transition-all duration-300 min-h-[350px] shadow-sm select-none active:scale-[0.99]
-                  ${isDragging ? "border-[#f26522] bg-orange-50 scale-[1.02]" : "border-gray-200 hover:border-[#f26522] hover:bg-gray-50"}
-                `}
-              >
+              <div className="w-full">
+                {/* ซ่อน input ตัวจริง โดยผูก id เข้ากับ label เพื่อให้เบราว์เซอร์มือถือเปิดกล้องหรือคลังรูปโดยตรง */}
                 <input 
                   id="food-camera-uploader"
                   type="file" 
@@ -597,10 +591,21 @@ const handleSaveToDiary = () => {
                   accept="image/*" 
                   className="hidden" 
                 />
-                <div className="w-20 h-20 bg-orange-100 text-[#f26522] rounded-full flex items-center justify-center text-3xl mb-4 shadow-inner">📸</div>
-                <h3 className="text-2xl font-bold text-gray-800 mb-2">แตะเพื่อถ่ายรูป หรือ ลากไฟล์มาวาง</h3>
-                <p className="text-gray-400 font-medium max-w-sm">รองรับไฟล์ JPG, PNG หรือเปิดกล้องถ่ายสดๆ เพื่อให้ AI ช่วยดูได้เลย</p>
-              </label>
+                
+                <label 
+                  htmlFor="food-camera-uploader"
+                  onDragOver={onDragOver} 
+                  onDragLeave={onDragLeave} 
+                  onDrop={onDrop}
+                  className={`bg-white w-full rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center p-12 text-center cursor-pointer transition-all duration-300 min-h-[350px] shadow-sm select-none active:scale-[0.99]
+                    ${isDragging ? "border-[#f26522] bg-orange-50 scale-[1.02]" : "border-gray-200 hover:border-[#f26522] hover:bg-gray-50"}
+                  `}
+                >
+                  <div className="w-20 h-20 bg-orange-100 text-[#f26522] rounded-full flex items-center justify-center text-3xl mb-4 shadow-inner">📸</div>
+                  <h3 className="text-2xl font-bold text-gray-800 mb-2">แตะเพื่อถ่ายรูป หรือ เลือกรูปอาหาร</h3>
+                  <p className="text-gray-400 font-medium max-w-sm">รองรับไฟล์ JPG, PNG หรือเปิดกล้องถ่ายสดๆ เพื่อให้ AI ช่วยดูได้เลย</p>
+                </label>
+              </div>
             ) : (
               <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row gap-8">
                 <div className="w-full md:w-1/2 flex flex-col items-center">
