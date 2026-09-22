@@ -135,6 +135,45 @@ const nutritionDB: Record<string, { cal: number; protein: number; fat: number; c
   "นมสดจืด": { cal: 60, protein: 3.2, fat: 3.5, carb: 4.8, unit: "กรัม", baseAmount: 100, category: "เครื่องปรุง & ไขมัน" },
   "ผงชูรส": { cal: 0, protein: 0, fat: 0, carb: 0, unit: "ช้อนชา", baseAmount: 1, category: "เครื่องปรุง & ไขมัน" }
 };
+
+// 🌟 ฟังก์ชันย่อขนาดและบีบอัดรูปภาพฝั่งเบราว์เซอร์ เพื่อไม่ให้เกินขีดจำกัด Vercel 4.5MB
+const compressImage = (file: File): Promise<{ base64: string; mimeType: string }> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 1024;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        // บีบอัดภาพเป็น JPEG คุณภาพ 75% ขนาดจะเหลือเพียง 100-300 KB
+        const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.75);
+        resolve({
+          base64: compressedDataUrl.split(",")[1],
+          mimeType: "image/jpeg",
+        });
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
+
 export default function CalculatePage() {
   const [activeMode, setActiveMode] = useState<"ai" | "manual">("manual");
 
@@ -197,7 +236,6 @@ export default function CalculatePage() {
     setCustomDishName(selected.name);
 
     const generatedItems: ManualIngredientItem[] = selected.ingredients.map((ingName) => {
-      // ค้นหาฐานข้อมูลโภชนาการที่ใกล้เคียงที่สุด
       const matchedKey = Object.keys(nutritionDB).find(k => ingName.includes(k) || k.includes(ingName));
       const info = matchedKey ? nutritionDB[matchedKey] : null;
 
@@ -213,7 +251,6 @@ export default function CalculatePage() {
           carb: info.carb / info.baseAmount
         };
       } else {
-        // วัตถุดิบทั่วไป (ค่าเฉลี่ยโภชนาการ)
         return {
           name: ingName,
           amount: 30,
@@ -263,20 +300,13 @@ export default function CalculatePage() {
     setEditableResult(null);
 
     try {
-      const base64Data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(imageFile);
-        reader.onload = () => {
-          if (typeof reader.result === 'string') resolve(reader.result.split(',')[1]);
-          else reject("Format Error");
-        };
-        reader.onerror = error => reject(error);
-      });
+      // บีบอัดภาพก่อนส่ง API ป้องกัน Error ข้ามเน็ตมือถือและขีดจำกัดขนาดไฟล์ Vercel
+      const { base64: base64Data, mimeType } = await compressImage(imageFile);
 
       const response = await fetch('/api/analyze-food', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: base64Data, mimeType: imageFile.type }),
+        body: JSON.stringify({ imageBase64: base64Data, mimeType }),
       });
 
       if (!response.ok) throw new Error("API ประมวลผลล้มเหลว");
@@ -295,7 +325,7 @@ export default function CalculatePage() {
       setEditableResult(JSON.parse(JSON.stringify(data))); 
 
     } catch (error) {
-      console.error(error);
+      console.error("AI Analysis Error:", error);
       alert("เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI กรุณาลองใหม่อีกครั้ง");
     } finally {
       setIsAnalyzing(false);
@@ -377,11 +407,13 @@ export default function CalculatePage() {
     }, 800);
   };
 
-  const handleSaveToDiary = () => {
+const handleSaveToDiary = () => {
     if (!editableResult || !originalResult) return;
     const saveMethod = editableResult.calories !== originalResult.calories ? 'manual_edit' : 'ai_vision';
+    
     // eslint-disable-next-line react-hooks/purity
     const currentId = Date.now().toString();
+
     const currentTime = new Date().toISOString();
 
     const newLogEntry = {
@@ -420,6 +452,7 @@ export default function CalculatePage() {
     setOriginalResult(null);
     setEditableResult(null);
     setManualSearchQuery("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   // ---------------- Logic: Manual Calculator ----------------
@@ -456,7 +489,6 @@ export default function CalculatePage() {
       return;
     }
 
-   
     const currentId = Date.now().toString();
     const currentTime = new Date().toISOString();
 
@@ -547,17 +579,28 @@ export default function CalculatePage() {
         {activeMode === "ai" && (
           <>
             {!previewUrl ? (
-              <div 
-                onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop} onClick={() => fileInputRef.current?.click()}
-                className={`bg-white w-full rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center p-12 text-center cursor-pointer transition-all duration-300 min-h-[350px] shadow-sm
+              /* แก้ไข: ใช้ label ครอบ input เพื่อให้เบราว์เซอร์มือถือยอมเปิดกล้องหรือคลังรูป 100% */
+              <label 
+                htmlFor="food-camera-uploader"
+                onDragOver={onDragOver} 
+                onDragLeave={onDragLeave} 
+                onDrop={onDrop}
+                className={`bg-white w-full rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center p-12 text-center cursor-pointer transition-all duration-300 min-h-[350px] shadow-sm select-none active:scale-[0.99]
                   ${isDragging ? "border-[#f26522] bg-orange-50 scale-[1.02]" : "border-gray-200 hover:border-[#f26522] hover:bg-gray-50"}
                 `}
               >
-                <input type="file" ref={fileInputRef} onChange={(e) => e.target.files && handleFileChange(e.target.files[0])} accept="image/*" className="hidden" capture="environment" />
+                <input 
+                  id="food-camera-uploader"
+                  type="file" 
+                  ref={fileInputRef} 
+                  onChange={(e) => e.target.files && e.target.files[0] && handleFileChange(e.target.files[0])} 
+                  accept="image/*" 
+                  className="hidden" 
+                />
                 <div className="w-20 h-20 bg-orange-100 text-[#f26522] rounded-full flex items-center justify-center text-3xl mb-4 shadow-inner">📸</div>
                 <h3 className="text-2xl font-bold text-gray-800 mb-2">แตะเพื่อถ่ายรูป หรือ ลากไฟล์มาวาง</h3>
                 <p className="text-gray-400 font-medium max-w-sm">รองรับไฟล์ JPG, PNG หรือเปิดกล้องถ่ายสดๆ เพื่อให้ AI ช่วยดูได้เลย</p>
-              </div>
+              </label>
             ) : (
               <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row gap-8">
                 <div className="w-full md:w-1/2 flex flex-col items-center">
@@ -658,8 +701,8 @@ export default function CalculatePage() {
                           <input 
                             type="number" 
                             value={newIngredientWeight} 
-                            onChange={(e) => setNewIngredientWeight(e.target.value ? Number(e.target.value) : "")}
-                            onKeyPress={(e) => e.key === 'Enter' && addIngredient()}
+                            onChange={(e) => setNewIngredientWeight(e.target.value ? Number(e.target.value) : "")} 
+                            onKeyPress={(e) => e.key === 'Enter' && addIngredient()} 
                             placeholder="กรัม (g)" 
                             className="w-1/4 bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#f26522] text-center"
                           />
@@ -724,12 +767,12 @@ export default function CalculatePage() {
                 defaultValue=""
                 className="w-full bg-white border border-orange-200 rounded-xl px-4 py-2.5 text-sm font-bold text-gray-700 focus:outline-none focus:border-[#f26522] shadow-sm cursor-pointer"
               >
-               <option value="" disabled>
-                 {isLoadingRecipes ? "กำลังโหลดรายชื่อเมนู..." : "-- คลิกเพื่อเลือกเมนูอาหาร --"}
-               </option>
-                 {supabaseRecipes.map((r, idx) => (
-               <option key={idx} value={r.name}>
-                🍳 {r.name} {r.kcal ? `(${r.kcal})` : ''}
+                <option value="" disabled>
+                  {isLoadingRecipes ? "กำลังโหลดรายชื่อเมนู..." : "-- คลิกเพื่อเลือกเมนูอาหาร --"}
+                </option>
+                  {supabaseRecipes.map((r, idx) => (
+                <option key={idx} value={r.name}>
+                  🍳 {r.name} {r.kcal ? `(${r.kcal})` : ''}
                 </option>
               ))}
                </select>
