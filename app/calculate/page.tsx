@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
 
+import { useState, useRef, useEffect, useCallback } from "react";
+import { nutritionMasterDB, findMatchedNutrition } from "@/lib/nutritionDB";
 // --- Types ---
 interface IngredientItem {
   name: string;
@@ -237,8 +238,7 @@ export default function CalculatePage() {
       isMounted = false;
     };
   }, []);
-
-  const handleSelectSupabaseRecipe = (recipeName: string) => {
+const handleSelectSupabaseRecipe = (recipeName: string) => {
     if (!recipeName) return;
     const selected = supabaseRecipes.find((r) => r.name === recipeName);
     if (!selected || !selected.ingredients) return;
@@ -246,27 +246,45 @@ export default function CalculatePage() {
     setCustomDishName(selected.name);
 
     const generatedItems: ManualIngredientItem[] = selected.ingredients.map((ingName) => {
-      const info = matchNutritionInfo(ingName);
+      // ใช้ findMatchedNutrition ในการค้นหาวัตถุดิบและคำพ้อง (เช่น หมูชิ้น -> เนื้อหมูสันนอก)
+      const info = findMatchedNutrition(ingName);
+
       if (info) {
-        const defaultAmt = info.unit === "ช้อนโต๊ะ" || info.unit === "ฟอง" || info.unit === "ลูก" ? 1 : 50;
+        let displayAmount = info.defaultPortionGrams;
+        let displayUnit = "กรัม";
+
+        // ปรับหน่วยแสดงผลสำหรับไข่หรือเครื่องปรุง
+        if (info.category === "egg") {
+          displayUnit = "ฟอง";
+          displayAmount = 1;
+        } else if (info.category === "fat" || info.category === "seasoning") {
+          displayUnit = "ช้อนโต๊ะ";
+          displayAmount = 1;
+        }
+
+        const gramWeight = info.conversions[displayUnit] || displayAmount;
+        const factor = gramWeight / 100;
+
         return {
           name: ingName,
-          amount: defaultAmt,
-          unit: info.unit,
-          calPerUnit: info.cal / info.baseAmount,
-          protein: info.protein / info.baseAmount,
-          fat: info.fat / info.baseAmount,
-          carb: info.carb / info.baseAmount,
+          amount: displayAmount,
+          unit: displayUnit,
+          calPerUnit: (info.calPer100g * factor) / displayAmount,
+          protein: (info.proteinPer100g * factor) / displayAmount,
+          fat: (info.fatPer100g * factor) / displayAmount,
+          carb: (info.carbPer100g * factor) / displayAmount,
         };
       }
+
+      // ค่าสำรองกรณีหาไม่พบ
       return {
         name: ingName,
-        amount: 30,
+        amount: 50,
         unit: "กรัม",
-        calPerUnit: 0.8,
+        calPerUnit: 1.2,
         protein: 0.05,
-        fat: 0.02,
-        carb: 0.1,
+        fat: 0.03,
+        carb: 0.15,
       };
     });
 
@@ -1043,21 +1061,20 @@ export default function CalculatePage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs font-bold text-gray-600 mb-1 block">เลือกวัตถุดิบ</label>
-                  <select
-                    value={selectedDbIng}
-                    onChange={(e) => {
-                      setSelectedDbIng(e.target.value);
-                      const unit = nutritionDB[e.target.value]?.unit;
-                      setManualInputAmount(unit === "ช้อนโต๊ะ" || unit === "ฟอง" || unit === "ลูก" ? 1 : 100);
-                    }}
-                    className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-medium focus:outline-none focus:border-[#f26522]"
-                  >
-                    {Object.keys(nutritionDB).map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
+               <select
+                  value={selectedDbIng}
+                  onChange={(e) => {
+                  setSelectedDbIng(e.target.value);
+                   setManualInputAmount(100);
+  }}
+  className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-medium focus:outline-none focus:border-[#f26522]"
+>
+  {Object.keys(nutritionMasterDB).map((name) => (
+    <option key={name} value={name}>
+      {name}
+    </option>
+  ))}
+</select>
                 </div>
 
                 <div>
