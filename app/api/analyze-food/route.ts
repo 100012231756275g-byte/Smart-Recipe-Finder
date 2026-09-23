@@ -1,3 +1,4 @@
+// app/api/analyze-food/route.ts
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
@@ -9,7 +10,7 @@ export async function POST(req: Request) {
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      return NextResponse.json({ error: 'ไม่พบ GEMINI_API_KEY' }, { status: 500 });
+      return NextResponse.json({ error: 'ไม่พบ GEMINI_API_KEY ในระบบ' }, { status: 500 });
     }
 
     const { imageBase64, mimeType } = await req.json();
@@ -19,14 +20,6 @@ export async function POST(req: Request) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-
-    // เปลี่ยนจาก gemini-1.5-flash ที่ถูกถอดไปแล้ว เป็นโมเดลปัจจุบัน
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-3.6-flash',
-      generationConfig: {
-        responseMimeType: 'application/json',
-      },
-    });
 
     const prompt = `
       คุณคือผู้เชี่ยวชาญด้านโภชนาการอาหารไทยและสากล จงวิเคราะห์รูปภาพอาหารนี้
@@ -52,18 +45,44 @@ export async function POST(req: Request) {
       },
     ];
 
-    const result = await model.generateContent([prompt, ...imageParts]);
-    const responseText = result.response.text();
-    const nutritionData = JSON.parse(responseText.trim());
+    // ลำดับโมเดล: เรียก 3.6-flash ก่อน ถ้าติด 503 จะสลับไป 3.5-flash-lite ทันที
+    const modelsToTry = [
+      'gemini-3.6-flash',
+      'gemini-3.5-flash-lite',
+    ];
 
-    return NextResponse.json(nutritionData);
+    let lastError: unknown = null;
+
+    for (const modelName of modelsToTry) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          generationConfig: {
+            responseMimeType: 'application/json',
+          },
+        });
+
+        const result = await model.generateContent([prompt, ...imageParts]);
+        const responseText = result.response.text();
+        const nutritionData = JSON.parse(responseText.trim());
+
+        // ส่งผลลัพธ์กลับทันทีเมื่อประมวลผลสำเร็จ
+        return NextResponse.json(nutritionData);
+      } catch (err) {
+        console.warn(`⚠️ โมเดล ${modelName} ใช้งานไม่ได้ กำลังสลับไปตัวถัดไป...`, (err as Error)?.message);
+        lastError = err;
+      }
+    }
+
+    // หากลองทุกลำดับแล้วยังไม่สำเร็จ
+    throw lastError;
 
   } catch (error) {
-    console.error('❌ Gemini API Error:', error);
+    console.error('❌ Gemini API Final Error:', error);
     return NextResponse.json(
       {
         error: 'เกิดข้อผิดพลาดในการวิเคราะห์รูปภาพจากฝั่ง AI',
-        details: (error as Error)?.message || 'Unknown error',
+        details: (error as Error)?.message || 'Server error',
       },
       { status: 500 }
     );
