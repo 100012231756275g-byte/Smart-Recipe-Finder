@@ -5,6 +5,7 @@ import { useState, useEffect, Suspense, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@supabase/supabase-js"; 
 import { checkIngredientsSafety } from "@/lib/healthRules";
+import { findMatchedNutrition } from "@/lib/nutritionDB";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -29,13 +30,27 @@ interface SavedItem {
 }
 
 interface StoredFridgeItem {
+  id?: string;
   name?: string;
+  amount?: string | number;
+  unit?: string;
   daysLeft?: number;
 }
 
 interface SubstituteRule {
   substitutes: string[];
   note: string;
+}
+
+interface IngredientCheckResult {
+  status: "available" | "partial" | "substitute" | "missing";
+  badge: string;
+  requiredAmount: number;
+  currentAmount: number;
+  missingAmount: number;
+  unit: string;
+  subItem: string | null;
+  note: string | null;
 }
 
 const diseaseRiskMap: Record<string, string[]> = {
@@ -82,6 +97,49 @@ const spicyKeywords = ["พริก", "เผ็ด", "ต้มยำ", "ย�
 const hardToChewKeywords = ["ทอดกรอบ", "หมูกรอบ", "เหนียว", "เอ็น", "กระดูกอ่อน"];
 const nonHalalKeywords = ["หมู", "หมูกรอบ", "หมูสามชั้น", "กุนเชียง", "เบคอน", "lard", "เลือดหมู", "เหล้า", "มิริน", "ไวน์"];
 
+// 🌟 ฟังก์ชันคำนวณปริมาณมาตรฐานที่สูตรต้องใช้ (Ground Truth)
+function getIngredientPortion(ingName: string): { amount: number; unit: string } {
+  try {
+    const master = findMatchedNutrition(ingName);
+    if (master) {
+      if (master.category === "egg") return { amount: 1, unit: "ฟอง" };
+      if (master.category === "seasoning" && master.conversions["ช้อนโต๊ะ"]) {
+        return { amount: 1, unit: "ช้อนโต๊ะ" };
+      }
+      if (master.category === "fat" && ingName.includes("กะทิ")) {
+        return { amount: 60, unit: "มล." };
+      }
+      return { amount: master.defaultPortionGrams || 50, unit: "กรัม" };
+    }
+  } catch {
+    // ใช้ Fallback เมื่อค้นหาไม่เจอ
+  }
+
+  const clean = ingName.toLowerCase();
+  if (clean.includes("กะทิ")) return { amount: 60, unit: "มล." };
+  if (clean.includes("ไก่")) return { amount: 90, unit: "กรัม" };
+  if (clean.includes("หมู")) return { amount: 80, unit: "กรัม" };
+  if (clean.includes("กุ้ง")) return { amount: 80, unit: "กรัม" };
+  if (clean.includes("ปลา")) return { amount: 100, unit: "กรัม" };
+  if (clean.includes("ไข่")) return { amount: 1, unit: "ฟอง" };
+  if (clean.includes("ข่า")) return { amount: 15, unit: "กรัม" };
+  if (clean.includes("ตะไคร้")) return { amount: 15, unit: "กรัม" };
+  if (clean.includes("ใบมะกรูด")) return { amount: 5, unit: "กรัม" };
+  if (clean.includes("เห็ด")) return { amount: 50, unit: "กรัม" };
+  if (clean.includes("มะนาว")) return { amount: 1, unit: "ลูก" };
+  if (clean.includes("น้ำปลา")) return { amount: 1, unit: "ช้อนโต๊ะ" };
+  if (clean.includes("ซีอิ๊ว")) return { amount: 1, unit: "ช้อนโต๊ะ" };
+  if (clean.includes("น้ำตาล")) return { amount: 1, unit: "ช้อนชา" };
+  if (clean.includes("พริก")) return { amount: 10, unit: "กรัม" };
+  if (clean.includes("กระเทียม")) return { amount: 10, unit: "กรัม" };
+  if (clean.includes("หอม")) return { amount: 20, unit: "กรัม" };
+  if (clean.includes("คะน้า") || clean.includes("ผัก")) return { amount: 50, unit: "กรัม" };
+  if (clean.includes("ข้าว")) return { amount: 150, unit: "กรัม" };
+  if (clean.includes("เส้น")) return { amount: 150, unit: "กรัม" };
+
+  return { amount: 50, unit: "กรัม" };
+}
+
 function RecipeDetailContent() {
   const params = useParams();
   const router = useRouter();
@@ -100,9 +158,10 @@ function RecipeDetailContent() {
   const [userBMIStatus, setUserBMIStatus] = useState<string | null>(null);
   const [userTDEE, setUserTDEE] = useState<number | null>(null);
   const [userAge, setUserAge] = useState<number | null>(null);
-  const [userFridge, setUserFridge] = useState<string[]>([]); 
+  const [userFridge, setUserFridge] = useState<string[]>([]);
+  const [userFridgeDetailed, setUserFridgeDetailed] = useState<StoredFridgeItem[]>([]);
   
-  const [currentUserContact, setCurrentUserContact] = useState<string>("");
+  const [currentUserContact, setCurrentUserContact] = useState<string>("default_user");
 
   const [isFavorite, setIsFavorite] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -123,29 +182,32 @@ function RecipeDetailContent() {
       try {
         const parsed = JSON.parse(savedFridgeStr);
         if (Array.isArray(parsed)) {
-          const names = parsed
-            .filter((item: string | StoredFridgeItem) => 
-              typeof item === "string" || item.daysLeft === undefined || item.daysLeft >= 0
-            )
-            .map((item: string | StoredFridgeItem) => 
-              typeof item === "string" ? item.trim() : (item?.name || "").trim()
-            )
-            .filter(Boolean);
-          setUserFridge(names);
+          const validItems = parsed.filter((item: string | StoredFridgeItem) => 
+            typeof item === "string" || item.daysLeft === undefined || item.daysLeft >= 0
+          );
+          const detailed: StoredFridgeItem[] = validItems.map((item: string | StoredFridgeItem) => {
+            if (typeof item === "string") return { name: item.trim() };
+            return item;
+          });
+          setUserFridgeDetailed(detailed);
+          setUserFridge(detailed.map(d => (d.name || "").trim()).filter(Boolean));
           return;
         }
       } catch {
-        setUserFridge(savedFridgeStr.split(",").map(i => i.trim()).filter(Boolean));
+        const items = savedFridgeStr.split(",").map(i => ({ name: i.trim() })).filter(i => Boolean(i.name));
+        setUserFridgeDetailed(items);
+        setUserFridge(items.map(i => i.name!));
         return;
       }
     }
+    setUserFridgeDetailed([]);
     setUserFridge([]);
   }, []);
 
   // ฟังก์ชันจำลองของในตู้เย็นสำหรับกดทดสอบเดโมหน้างาน
   const handleLoadDemoFridge = () => {
     const demoItems = [
-      { id: "1", name: "ข้าวสวย", amount: "1 ถ้วย", icon: "🍚", daysLeft: 2, expiryDateText: "2 วัน" },
+      { id: "1", name: "ข้าวสวย", amount: "150 กรัม", icon: "🍚", daysLeft: 2, expiryDateText: "2 วัน" },
       { id: "2", name: "ไก่", amount: "300 กรัม", icon: "🍗", daysLeft: 3, expiryDateText: "3 วัน" },
       { id: "3", name: "ซีอิ๊วขาว", amount: "1 ขวด", icon: "🍶", daysLeft: 30, expiryDateText: "30 วัน" },
       { id: "4", name: "กวางตุ้ง", amount: "1 กำ", icon: "🥬", daysLeft: 4, expiryDateText: "4 วัน" },
@@ -158,12 +220,10 @@ function RecipeDetailContent() {
   };
 
   useEffect(() => {
-    // 1. ผูก Event Listener ดักจับการอัปเดตตู้เย็น
     window.addEventListener("fridgeUpdated", loadFridgeData);
     window.addEventListener("storage", loadFridgeData);
     window.addEventListener("focus", loadFridgeData);
 
-    // 2. เรียกโหลดข้อมูลใน setTimeout เพื่อป้องกัน Warning set-state-in-effect
     const timer = setTimeout(() => {
       loadFridgeData();
 
@@ -172,8 +232,12 @@ function RecipeDetailContent() {
 
       const savedUserStr = sessionStorage.getItem("mockUser");
       if (savedUserStr) {
-        const savedUser = JSON.parse(savedUserStr);
-        if (savedUser.contact) setCurrentUserContact(savedUser.contact);
+        try {
+          const savedUser = JSON.parse(savedUserStr);
+          if (savedUser.contact) setCurrentUserContact(savedUser.contact);
+        } catch (e) {
+          console.error(e);
+        }
       }
 
       const savedAllergies = localStorage.getItem("allergies");
@@ -198,7 +262,6 @@ function RecipeDetailContent() {
         setImageError(false);
         
         const nameParam = (params?.name as string) || (params?.id as string) || "";
-        
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 8000);
 
@@ -383,7 +446,7 @@ function RecipeDetailContent() {
             </p>
             <button
               onClick={handleRandomRecipe}
-              className="w-full text-white bg-[#f26522] py-4 rounded-2xl font-bold shadow-md hover:bg-orange-600 transition-all active:scale-95 text-lg flex items-center justify-center gap-2"
+              className="w-full text-white bg-[#f26522] py-4 rounded-2xl font-bold shadow-md hover:bg-orange-600 transition-all active:scale-95 text-lg flex items-center justify-center gap-2 cursor-pointer"
             >
               🎯 เริ่มสุ่มเมนูอาหารเลย!
             </button>
@@ -397,28 +460,66 @@ function RecipeDetailContent() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center font-bold text-red-500 bg-gray-50">
         <p className="text-2xl mb-4">หาเมนูอาหารไม่เจอครับ 😢</p>
-        <button onClick={() => setHasRandomized(false)} className="text-white bg-[#f26522] px-6 py-2 rounded-full shadow-md hover:bg-orange-600 transition-colors">
+        <button onClick={() => setHasRandomized(false)} className="text-white bg-[#f26522] px-6 py-2 rounded-full shadow-md hover:bg-orange-600 transition-colors cursor-pointer">
           กลับไปหน้าสุ่มเมนูใหม่
         </button>
       </div>
     );
   }
 
-  // --- ตรรกะตรวจสอบวัตถุดิบกับตู้เย็น (ทำงานเสมอ) ---
-  const getFridgeItemStatus = (ingName: string) => {
+  // --- ตรรกะตรวจสอบวัตถุดิบกับตู้เย็น พร้อมคำนวณปริมาณที่ต้องใช้และส่วนต่างที่ขาด ---
+  const getFridgeItemStatus = (ingName: string): IngredientCheckResult => {
     const cleanIng = ingName.toLowerCase();
+    const portion = getIngredientPortion(ingName);
+    const requiredAmount = portion.amount;
+    const unit = portion.unit;
 
-    // 1. ตรวจว่ามีในตู้เย็นหรือไม่
-    const directMatch = userFridge.find(fItem => {
-      const cleanF = fItem.toLowerCase();
+    // 1. ตรวจสอบว่าในตู้เย็นมีวัตถุดิบนี้หรือไม่
+    const matchedDetailed = userFridgeDetailed.find(item => {
+      const cleanF = (item.name || "").toLowerCase();
       return cleanIng.includes(cleanF) || cleanF.includes(cleanIng);
     });
 
-    if (directMatch) {
-      return { status: "available", badge: "มีในตู้เย็นแล้ว 🧊", subItem: directMatch, note: null };
+    if (matchedDetailed) {
+      // ดึงตัวเลขจาก amount ที่บันทึกไว้ในตู้เย็น (เช่น "300 กรัม" หรือ 300)
+      let parsedAmount = 0;
+      if (typeof matchedDetailed.amount === "number") {
+        parsedAmount = matchedDetailed.amount;
+      } else if (typeof matchedDetailed.amount === "string") {
+        const numMatch = matchedDetailed.amount.match(/(\d+(\.\d+)?)/);
+        if (numMatch) parsedAmount = parseFloat(numMatch[0]);
+      }
+
+      // ถ้าในตู้เย็นมีแต่ชื่อ ไม่ได้ระบุปริมาณ ให้ถือว่ามีพอดีตามสูตร
+      const currentAmount = parsedAmount > 0 ? parsedAmount : requiredAmount;
+
+      if (currentAmount >= requiredAmount) {
+        return {
+          status: "available",
+          badge: `มีแล้ว ${currentAmount} ${unit} (พอดี 🧊)`,
+          requiredAmount,
+          currentAmount,
+          missingAmount: 0,
+          unit,
+          subItem: matchedDetailed.name || null,
+          note: null
+        };
+      } else {
+        const missingAmount = requiredAmount - currentAmount;
+        return {
+          status: "partial",
+          badge: `มี ${currentAmount} / ขาดอีก ${missingAmount} ${unit} ⚠️`,
+          requiredAmount,
+          currentAmount,
+          missingAmount,
+          unit,
+          subItem: matchedDetailed.name || null,
+          note: null
+        };
+      }
     }
 
-    // 2. ตรวจว่าในตู้เย็นมีของที่ใช้ทดแทนได้หรือไม่
+    // 2. ตรวจสอบของทดแทนในตู้เย็น
     for (const [key, rule] of Object.entries(smartSubstituteDictionary)) {
       if (cleanIng.includes(key.toLowerCase())) {
         const availableSub = rule.substitutes.find(subCandidate =>
@@ -432,6 +533,10 @@ function RecipeDetailContent() {
           return {
             status: "substitute",
             badge: `ในตู้เย็นมี "${availableSub}" แทนได้ 💡`,
+            requiredAmount,
+            currentAmount: requiredAmount,
+            missingAmount: 0,
+            unit,
             subItem: availableSub,
             note: rule.note
           };
@@ -439,8 +544,17 @@ function RecipeDetailContent() {
       }
     }
 
-    // 3. ไม่มีของ และไม่มีตัวทดแทนในตู้เย็น
-    return { status: "missing", badge: "ไม่มีในตู้เย็น (ของขาด) ❌", subItem: null, note: null };
+    // 3. ไม่มีของในตู้เย็นเลย (ขาดเต็มจำนวน)
+    return {
+      status: "missing",
+      badge: `ขาดอีก ${requiredAmount} ${unit} ❌`,
+      requiredAmount,
+      currentAmount: 0,
+      missingAmount: requiredAmount,
+      unit,
+      subItem: null,
+      note: null
+    };
   };
 
   const bmiNumber = userBMIStatus && (userBMIStatus.includes("อ้วน") || userBMIStatus.includes("ท้วม")) ? 26 : 21;
@@ -455,7 +569,7 @@ function RecipeDetailContent() {
   const rawIngredients = recipe.ingredients || [];
   const readyItems: string[] = [];
   const substituteItems: { missing: string; replaceWith: string; note: string }[] = [];
-  const missingItems: string[] = [];
+  const missingItemsWithQuantity: string[] = [];
 
   rawIngredients.forEach((ing) => {
     const check = getFridgeItemStatus(ing);
@@ -463,8 +577,10 @@ function RecipeDetailContent() {
       readyItems.push(ing);
     } else if (check.status === "substitute") {
       substituteItems.push({ missing: ing, replaceWith: check.subItem || "", note: check.note || "" });
+    } else if (check.status === "partial") {
+      missingItemsWithQuantity.push(`${ing} (ขาดอีก ${check.missingAmount} ${check.unit})`);
     } else {
-      missingItems.push(ing);
+      missingItemsWithQuantity.push(`${ing} (ขาดอีก ${check.missingAmount} ${check.unit})`);
     }
   });
 
@@ -546,7 +662,7 @@ function RecipeDetailContent() {
                 <span className="text-2xl animate-pulse">{hasAllergy ? '🚨' : '⚠️'}</span>
                 <span>ระบบตรวจพบข้อจำกัดสุขภาพ: มีการคัดกรองวัตถุดิบให้คุณ</span>
               </div>
-              <button onClick={() => setIsWarningOpen(!isWarningOpen)} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${hasAllergy ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
+              <button onClick={() => setIsWarningOpen(!isWarningOpen)} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors cursor-pointer ${hasAllergy ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
                 {isWarningOpen ? 'ซ่อนคำอธิบาย' : 'ดูคำอธิบาย'}
               </button>
             </div>
@@ -640,7 +756,7 @@ function RecipeDetailContent() {
                 <div className="flex gap-2">
                   <button 
                     onClick={handleRandomRecipe}
-                    className="p-3 rounded-full border-2 bg-white border-gray-200 text-gray-500 hover:text-[#f26522] hover:bg-orange-50 transition-all transform active:scale-95 shadow-sm"
+                    className="p-3 rounded-full border-2 bg-white border-gray-200 text-gray-500 hover:text-[#f26522] hover:bg-orange-50 transition-all transform active:scale-95 shadow-sm cursor-pointer"
                     title="สุ่มเมนูอื่น"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -648,7 +764,7 @@ function RecipeDetailContent() {
                     </svg>
                   </button>
 
-                  <button onClick={toggleFavorite} className={`p-3 rounded-full border-2 transition-all ${isFavorite ? 'bg-red-50 text-red-500 border-red-200' : 'bg-white text-gray-300 border-gray-200'}`}>
+                  <button onClick={toggleFavorite} className={`p-3 rounded-full border-2 transition-all cursor-pointer ${isFavorite ? 'bg-red-50 text-red-500 border-red-200' : 'bg-white text-gray-300 border-gray-200'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill={isFavorite ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
                   </button>
                 </div>
@@ -672,7 +788,7 @@ function RecipeDetailContent() {
                 <button
                   type="button"
                   onClick={handleLoadDemoFridge}
-                  className="text-[11px] font-bold bg-orange-100 hover:bg-orange-200 text-orange-800 px-2.5 py-1 rounded-lg transition-colors border border-orange-200"
+                  className="text-[11px] font-bold bg-orange-100 hover:bg-orange-200 text-orange-800 px-2.5 py-1 rounded-lg transition-colors border border-orange-200 cursor-pointer"
                   title="คลิกเพื่อจำลองของในตู้เย็นสำหรับพรีเซนต์สด"
                 >
                   ⚡ จำลองของในตู้เย็น (Demo)
@@ -680,7 +796,7 @@ function RecipeDetailContent() {
                 <button
                   type="button"
                   onClick={() => router.push("/my-fridge")}
-                  className="text-xs font-bold text-[#f26522] hover:underline"
+                  className="text-xs font-bold text-[#f26522] hover:underline cursor-pointer"
                 >
                   ไปตู้เย็นของฉัน →
                 </button>
@@ -694,10 +810,10 @@ function RecipeDetailContent() {
               </div>
             )}
 
-            {missingItems.length > 0 && (
+            {missingItemsWithQuantity.length > 0 && (
               <div className="text-red-600 font-bold text-xs sm:text-sm mb-2.5 flex items-start gap-1.5">
                 <span className="shrink-0 mt-0.5">❌</span>
-                <span><strong>ของที่ขาดในตู้เย็น ({missingItems.length} อย่าง):</strong> {missingItems.join(", ")}</span>
+                <span><strong>ของที่ขาดในตู้เย็น ({missingItemsWithQuantity.length} อย่าง):</strong> {missingItemsWithQuantity.join(", ")}</span>
               </div>
             )}
 
@@ -714,14 +830,14 @@ function RecipeDetailContent() {
               </div>
             )}
 
-            {userFridge.length > 0 && missingItems.length === 0 && (
+            {userFridge.length > 0 && missingItemsWithQuantity.length === 0 && (
               <div className="text-emerald-600 font-extrabold text-xs sm:text-sm flex items-center gap-1.5">
                 <span>🎉</span> วัตถุดิบในตู้เย็นของคุณพร้อมครบถ้วน สามารถลงมือทำอาหารได้ทันที!
               </div>
             )}
           </div>
 
-          {/* รายการวัตถุดิบที่ต้องใช้ */}
+          {/* รายการวัตถุดิบที่ต้องใช้ (แสดงจำนวนที่ต้องใช้และจำนวนที่ขาดจริง) */}
           <div className="mb-10">
             <div className="flex items-center justify-between mb-4 border-l-4 border-[#f26522] pl-3">
               <h2 className="text-xl font-bold text-gray-800">📋 วัตถุดิบที่ต้องใช้</h2>
@@ -744,6 +860,8 @@ function RecipeDetailContent() {
                         ? "bg-emerald-50/60 border-emerald-300"
                         : fridgeStatus.status === "substitute"
                         ? "bg-amber-50/70 border-amber-300"
+                        : fridgeStatus.status === "partial"
+                        ? "bg-amber-50/60 border-amber-300"
                         : "bg-red-50/60 border-red-300"
                     }`}
                   >
@@ -752,27 +870,30 @@ function RecipeDetailContent() {
                         <div className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${
                           fridgeStatus.status === "available"
                             ? "bg-emerald-500"
-                            : fridgeStatus.status === "substitute"
+                            : fridgeStatus.status === "substitute" || fridgeStatus.status === "partial"
                             ? "bg-amber-500"
                             : "bg-red-500"
                         }`} />
-                        <span className={`text-sm font-extrabold ${
-                          isAllergy
-                            ? "text-red-600 line-through"
-                            : isDiseaseRisk
-                            ? "text-orange-600"
-                            : "text-gray-800"
-                        }`}>
-                          {ing}
-                          {isAllergy && " 🚨"}
-                          {isDiseaseRisk && !isAllergy && " ⚠️"}
-                        </span>
+                        <div>
+                          <span className={`text-sm font-extrabold block ${
+                            isAllergy
+                              ? "text-red-600 line-through"
+                              : isDiseaseRisk
+                              ? "text-orange-600"
+                              : "text-gray-800"
+                          }`}>
+                            {ing} {isAllergy && " 🚨"} {isDiseaseRisk && !isAllergy && " ⚠️"}
+                          </span>
+                          <span className="text-[11px] text-gray-500 font-medium">
+                            สูตรต้องใช้: <strong className="text-gray-700">{fridgeStatus.requiredAmount} {fridgeStatus.unit}</strong>
+                          </span>
+                        </div>
                       </div>
 
-                      <span className={`text-[11px] font-black px-2 py-0.5 rounded-lg shrink-0 border shadow-2xs ${
+                      <span className={`text-[11px] font-black px-2.5 py-1 rounded-lg shrink-0 border shadow-2xs ${
                         fridgeStatus.status === "available"
                           ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                          : fridgeStatus.status === "substitute"
+                          : fridgeStatus.status === "substitute" || fridgeStatus.status === "partial"
                           ? "bg-amber-100 text-amber-900 border-amber-300"
                           : "bg-red-100 text-red-700 border-red-300"
                       }`}>
@@ -815,7 +936,7 @@ function RecipeDetailContent() {
             <div className="flex gap-3 w-full md:w-auto">
               <button
                 onClick={handleRandomRecipe}
-                className="flex-1 md:flex-initial text-white bg-[#f26522] px-6 py-3 rounded-2xl font-bold shadow-md hover:bg-orange-600 transition-all active:scale-95 flex items-center justify-center gap-2"
+                className="flex-1 md:flex-initial text-white bg-[#f26522] px-6 py-3 rounded-2xl font-bold shadow-md hover:bg-orange-600 transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
               >
                 <span>🎲</span> สุ่มเมนูอาหารอื่น
               </button>
@@ -832,7 +953,7 @@ function RecipeDetailContent() {
                 return (
                   <button
                     onClick={() => router.push(fromPage)}
-                    className="flex-1 md:flex-initial text-center bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-3 rounded-2xl font-bold transition-all text-sm flex items-center justify-center"
+                    className="flex-1 md:flex-initial text-center bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-3 rounded-2xl font-bold transition-all text-sm flex items-center justify-center cursor-pointer"
                   >
                     {buttonLabel}
                   </button>
