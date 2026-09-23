@@ -1,8 +1,9 @@
+// app/calculate/page.tsx
 "use client";
-
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { nutritionMasterDB, findMatchedNutrition } from "@/lib/nutritionDB";
+
 // --- Types ---
 interface IngredientItem {
   name: string;
@@ -24,8 +25,8 @@ interface DbRecipe {
   name: string;
   kcal?: string;
   ingredients?: string[];
-  image?: string;       // เพิ่มบรรทัดนี้
-  image_url?: string;   // เพิ่มบรรทัดนี้
+  image?: string;
+  image_url?: string;
 }
 
 interface ManualIngredientItem {
@@ -238,7 +239,8 @@ export default function CalculatePage() {
       isMounted = false;
     };
   }, []);
-const handleSelectSupabaseRecipe = (recipeName: string) => {
+
+  const handleSelectSupabaseRecipe = (recipeName: string) => {
     if (!recipeName) return;
     const selected = supabaseRecipes.find((r) => r.name === recipeName);
     if (!selected || !selected.ingredients) return;
@@ -252,7 +254,6 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
         let displayAmount = info.defaultPortionGrams;
         let displayUnit = "กรัม";
 
-        // กำหนดหน่วยเริ่มต้นสำหรับไข่และเครื่องปรุง
         if (info.category === "egg") {
           displayUnit = "ฟอง";
           displayAmount = 1;
@@ -261,10 +262,7 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
           displayAmount = 1;
         }
 
-        // หาน้ำหนักกรัมต่อ 1 หน่วยที่เลือก (เช่น 1 กรัม = 1g, 1 ฟอง = 50g, 1 ช้อนโต๊ะ = 14g)
         const unitGram = info.conversions[displayUnit] || 1;
-
-        // คำนวณสารอาหารต่อ 1 หน่วยที่แท้จริง (ไม่ต้องหาร displayAmount ซ้ำ)
         const calPerOneUnit = (info.calPer100g / 100) * unitGram;
         const proteinPerOneUnit = (info.proteinPer100g / 100) * unitGram;
         const fatPerOneUnit = (info.fatPer100g / 100) * unitGram;
@@ -281,10 +279,9 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
         };
       }
 
-      // วัตถุดิบสมุนไพร/เครื่องต้มยำที่ให้พลังงานต่ำมาก (ข่า, ตะไคร้, ใบมะกรูด)
-      const isAromatic = ["ข่า", "ตะไคร้", "ใบมะกรูด", "พริก", "ผักชี"].some(k => ingName.includes(k));
+      const isAromatic = ["ข่า", "ตะไคร้", "ใบมะกรูด", "พริก", "ผักชี"].some((k) => ingName.includes(k));
       const defaultWeight = isAromatic ? 15 : 50;
-      const fallbackCalPerGram = isAromatic ? 0.2 : 0.8; // สมุนไพรต้มยำแทบไม่มีแคลอรี่
+      const fallbackCalPerGram = isAromatic ? 0.2 : 0.8;
 
       return {
         name: ingName,
@@ -397,7 +394,7 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
     }
   };
 
-// 🔍 ค้นหาเมนูอาหารจริงจาก Supabase (169 เมนู) และฐานข้อมูลวัตถุดิบ
+  // 🔍 ค้นหาเมนูอาหารจริงจาก Supabase (169 เมนู) และฐานข้อมูลวัตถุดิบ
   const handleManualSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const query = manualSearchQuery.trim().toLowerCase();
@@ -405,9 +402,8 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
 
     setIsSearchingManual(true);
 
-    // 1. ค้นหาจาก 169 เมนูใน Supabase ก่อน
-    const foundRecipe = supabaseRecipes.find(r => 
-      r.name.toLowerCase().includes(query) || query.includes(r.name.toLowerCase())
+    const foundRecipe = supabaseRecipes.find(
+      (r) => r.name.toLowerCase().includes(query) || query.includes(r.name.toLowerCase())
     );
 
     if (foundRecipe) {
@@ -416,9 +412,8 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
       let totalCarb = 0;
       let totalFat = 0;
 
-      // แกะวัตถุดิบจริงของเมนูนั้นแล้วคำนวณ Macro ตามสัดส่วนมาตรฐาน
-      const ingredientsList: IngredientItem[] = (foundRecipe.ingredients || []).map(ingName => {
-        const matchedKey = Object.keys(nutritionDB).find(k => ingName.includes(k) || k.includes(ingName));
+      const ingredientsList: IngredientItem[] = (foundRecipe.ingredients || []).map((ingName) => {
+        const matchedKey = Object.keys(nutritionDB).find((k) => ingName.includes(k) || k.includes(ingName));
         const info = matchedKey ? nutritionDB[matchedKey] : null;
 
         let defaultWeight = 50;
@@ -442,8 +437,7 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
         return { name: ingName, weight: defaultWeight };
       });
 
-      // ถ้าใน Supabase มีระบุ kcal รวมของเมนูไว้ ให้ยึดค่านั้นเป็นหลัก
-      const dbKcalNumber = parseInt(foundRecipe.kcal?.replace(/[^0-9]/g, '') || '0', 10);
+      const dbKcalNumber = parseInt(foundRecipe.kcal?.replace(/[^0-9]/g, "") || "0", 10);
       const calculatedCal = totalCal > 0 ? Math.round(totalCal) : 450;
       const finalCalories = dbKcalNumber > 0 ? dbKcalNumber : calculatedCal;
 
@@ -453,18 +447,16 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
         protein: Math.round(totalProtein) || 22,
         carbs: Math.round(totalCarb) || 55,
         fat: Math.round(totalFat) || 15,
-        ingredients: ingredientsList.length > 0 ? ingredientsList : [{ name: foundRecipe.name, weight: 250 }]
+        ingredients: ingredientsList.length > 0 ? ingredientsList : [{ name: foundRecipe.name, weight: 250 }],
       };
 
       setOriginalResult(JSON.parse(JSON.stringify(realData)));
       setEditableResult(JSON.parse(JSON.stringify(realData)));
-     // ดึงรูปจริงจากฐานข้อมูล Supabase
       const recipeImage = foundRecipe.image || foundRecipe.image_url;
       setPreviewUrl(recipeImage || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=800&auto=format&fit=crop");
     } else {
-      // 2. ถ้าไม่เจอในเมนู ให้ค้นในฐานข้อมูลวัตถุดิบเดี่ยวๆ
-      const matchedKey = Object.keys(nutritionDB).find(k => 
-        k.toLowerCase().includes(query) || query.includes(k.toLowerCase())
+      const matchedKey = Object.keys(nutritionDB).find(
+        (k) => k.toLowerCase().includes(query) || query.includes(k.toLowerCase())
       );
 
       if (matchedKey) {
@@ -475,7 +467,7 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
           protein: info.protein,
           carbs: info.carb,
           fat: info.fat,
-          ingredients: [{ name: matchedKey, weight: info.baseAmount }]
+          ingredients: [{ name: matchedKey, weight: info.baseAmount }],
         };
 
         setOriginalResult(JSON.parse(JSON.stringify(singleData)));
@@ -489,6 +481,7 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
     setIsSearchingManual(false);
     setManualSearchQuery("");
   };
+
   const addIngredient = () => {
     if (!newIngredientName.trim() || !newIngredientWeight || !editableResult) return;
     setEditableResult({
@@ -523,7 +516,6 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
     setIsRecalculating(true);
 
     try {
-      // คำนวณ Delta ของส่วนผสมที่เปลี่ยนแปลง
       let deltaCal = 0;
       let deltaProtein = 0;
       let deltaCarbs = 0;
@@ -543,7 +535,6 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
             deltaCarbs += info.carb * factor;
             deltaFat += info.fat * factor;
           } else {
-            // ค่าเฉลี่ยมาตรฐาน (1.5 kcal/g) หากไม่พบใน Dictionary
             deltaCal += weightDiff * 1.5;
             deltaProtein += weightDiff * 0.1;
             deltaCarbs += weightDiff * 0.15;
@@ -552,7 +543,6 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
         }
       });
 
-      // จัดการรายการที่ถูกลบออกไป
       originalResult.ingredients.forEach((origIng) => {
         const exists = editableResult.ingredients.some((c) => c.name === origIng.name);
         if (!exists) {
@@ -711,7 +701,7 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
         <div className="inline-flex p-1.5 bg-gray-100/80 rounded-2xl border border-gray-200 shadow-inner max-w-md mx-auto mb-2">
           <button
             onClick={() => setActiveMode("ai")}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer ${
               activeMode === "ai"
                 ? "bg-[#f26522] text-white shadow-md"
                 : "text-gray-600 hover:text-gray-900 hover:bg-white/60"
@@ -721,7 +711,7 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
           </button>
           <button
             onClick={() => setActiveMode("manual")}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all ${
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer ${
               activeMode === "manual"
                 ? "bg-[#f26522] text-white shadow-md"
                 : "text-gray-600 hover:text-gray-900 hover:bg-white/60"
@@ -743,7 +733,7 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
             <button
               type="submit"
               disabled={isSearchingManual}
-              className="absolute right-1.5 top-1.5 bottom-1.5 bg-gray-900 hover:bg-black text-white font-bold rounded-full px-5 transition-colors text-sm disabled:opacity-50"
+              className="absolute right-1.5 top-1.5 bottom-1.5 bg-gray-900 hover:bg-black text-white font-bold rounded-full px-5 transition-colors text-sm disabled:opacity-50 cursor-pointer"
             >
               {isSearchingManual ? "..." : "ค้นหา"}
             </button>
@@ -764,16 +754,19 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
                   isDragging ? "border-[#f26522] bg-orange-50 scale-[1.02]" : "border-gray-200"
                 }`}
               >
+                {/* 🌟 ช่องรับไฟล์กล้องสดและอัลบั้ม (แก้ปัญหา Android Intent Block) */}
                 <input
                   id="direct-camera-input"
                   type="file"
                   accept="image/*"
                   capture="environment"
                   ref={cameraInputRef}
-                  onClick={(e) => {
-                    (e.target as HTMLInputElement).value = "";
+                  onChange={(e) => {
+                    if (e.target.files?.[0]) {
+                      handleFileChange(e.target.files[0]);
+                    }
+                    e.target.value = "";
                   }}
-                  onChange={(e) => e.target.files?.[0] && handleFileChange(e.target.files[0])}
                   className="hidden"
                 />
 
@@ -782,10 +775,12 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
                   type="file"
                   accept="image/*"
                   ref={fileInputRef}
-                  onClick={(e) => {
-                    (e.target as HTMLInputElement).value = "";
+                  onChange={(e) => {
+                    if (e.target.files?.[0]) {
+                      handleFileChange(e.target.files[0]);
+                    }
+                    e.target.value = "";
                   }}
-                  onChange={(e) => e.target.files?.[0] && handleFileChange(e.target.files[0])}
                   className="hidden"
                 />
 
@@ -799,20 +794,23 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
                   </p>
                 </div>
 
+                {/* 🌟 ปุ่มกดที่สั่งเปิดกล้องระดับ Hardware ได้ตรงจุด */}
                 <div className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
-                  <label
-                    htmlFor="direct-camera-input"
+                  <button
+                    type="button"
+                    onClick={() => cameraInputRef.current?.click()}
                     className="flex-1 bg-[#f26522] hover:bg-orange-600 text-white font-bold py-4 px-6 rounded-2xl shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2 select-none"
                   >
                     <span>📷</span> ถ่ายรูปสด (เปิดกล้อง)
-                  </label>
+                  </button>
 
-                  <label
-                    htmlFor="gallery-file-input"
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
                     className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-4 px-6 rounded-2xl transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2 select-none"
                   >
                     <span>🖼️</span> เลือกจากอัลบั้ม
-                  </label>
+                  </button>
                 </div>
               </div>
             ) : (
@@ -835,13 +833,13 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
                     <div className="flex gap-4 mt-6 w-full">
                       <button
                         onClick={resetAll}
-                        className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-colors"
+                        className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-colors cursor-pointer"
                       >
                         เปลี่ยนรูป
                       </button>
                       <button
                         onClick={analyzeFoodImage}
-                        className="flex-1 py-4 bg-[#f26522] hover:bg-orange-600 text-white font-bold rounded-2xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2"
+                        className="flex-1 py-4 bg-[#f26522] hover:bg-orange-600 text-white font-bold rounded-2xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
                       >
                         <span>✨</span> วิเคราะห์เลย
                       </button>
@@ -954,7 +952,7 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
                               </div>
                               <button
                                 onClick={() => removeIngredient(i)}
-                                className="w-6 h-6 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full font-bold focus:outline-none transition-colors"
+                                className="w-6 h-6 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full font-bold focus:outline-none transition-colors cursor-pointer"
                               >
                                 ✕
                               </button>
@@ -982,7 +980,7 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
                           />
                           <button
                             onClick={addIngredient}
-                            className="w-1/4 bg-gray-800 hover:bg-gray-900 text-white rounded-xl text-sm font-bold transition-colors"
+                            className="w-1/4 bg-gray-800 hover:bg-gray-900 text-white rounded-xl text-sm font-bold transition-colors cursor-pointer"
                           >
                             เพิ่ม
                           </button>
@@ -990,7 +988,7 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
 
                         <button
                           onClick={handleRecalculate}
-                          className="mt-4 w-full py-3 bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-100 font-bold rounded-xl transition-colors flex justify-center items-center gap-2 shadow-sm"
+                          className="mt-4 w-full py-3 bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-100 font-bold rounded-xl transition-colors flex justify-center items-center gap-2 shadow-sm cursor-pointer"
                         >
                           {isRecalculating ? (
                             <>
@@ -1006,13 +1004,13 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
                       <div className="mt-auto pt-4 flex gap-3 border-t border-gray-100">
                         <button
                           onClick={resetAll}
-                          className="w-1/3 py-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-all"
+                          className="w-1/3 py-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-all cursor-pointer"
                         >
                           สแกนใหม่
                         </button>
                         <button
                           onClick={handleSaveToDiary}
-                          className="w-2/3 py-4 bg-gray-900 hover:bg-black text-white font-bold rounded-2xl shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+                          className="w-2/3 py-4 bg-gray-900 hover:bg-black text-white font-bold rounded-2xl shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
                         >
                           <span>💾</span> บันทึกลงสมุด
                         </button>
@@ -1070,20 +1068,20 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs font-bold text-gray-600 mb-1 block">เลือกวัตถุดิบ</label>
-               <select
-                  value={selectedDbIng}
-                  onChange={(e) => {
-                  setSelectedDbIng(e.target.value);
-                   setManualInputAmount(100);
-  }}
-  className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-medium focus:outline-none focus:border-[#f26522]"
->
-  {Object.keys(nutritionMasterDB).map((name) => (
-    <option key={name} value={name}>
-      {name}
-    </option>
-  ))}
-</select>
+                  <select
+                    value={selectedDbIng}
+                    onChange={(e) => {
+                      setSelectedDbIng(e.target.value);
+                      setManualInputAmount(100);
+                    }}
+                    className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-medium focus:outline-none focus:border-[#f26522]"
+                  >
+                    {Object.keys(nutritionMasterDB || nutritionDB).map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -1102,7 +1100,7 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
                 <div className="flex items-end">
                   <button
                     onClick={handleAddManualItem}
-                    className="w-full bg-[#f26522] hover:bg-orange-600 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-md active:scale-95"
+                    className="w-full bg-[#f26522] hover:bg-orange-600 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-md active:scale-95 cursor-pointer"
                   >
                     เพิ่มวัตถุดิบ
                   </button>
@@ -1171,7 +1169,7 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
                         </span>
                         <button
                           onClick={() => handleRemoveManualItem(idx)}
-                          className="text-gray-300 hover:text-red-500 transition-colors p-1"
+                          className="text-gray-300 hover:text-red-500 transition-colors p-1 cursor-pointer"
                           title="ลบออก"
                         >
                           ✕
@@ -1184,7 +1182,7 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
 
               <button
                 onClick={handleSaveManualToDiary}
-                className="w-full py-4 bg-gray-900 hover:bg-black text-white font-bold rounded-2xl shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+                className="w-full py-4 bg-gray-900 hover:bg-black text-white font-bold rounded-2xl shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
               >
                 <span>💾</span> บันทึกเมนูนี้ลงสมุดไดอารี่
               </button>
