@@ -367,7 +367,7 @@ export default function CalculatePage() {
     }
   };
 
-  // ค้นหาเมนูอาหารจริงจากฐานข้อมูลระบบ (แทนที่ Mock หลอก)
+// 🔍 ค้นหาเมนูอาหารจริงจาก Supabase (169 เมนู) และฐานข้อมูลวัตถุดิบ
   const handleManualSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const query = manualSearchQuery.trim().toLowerCase();
@@ -375,68 +375,88 @@ export default function CalculatePage() {
 
     setIsSearchingManual(true);
 
-    const matchedRecipe = supabaseRecipes.find((r) => r.name.toLowerCase().includes(query));
-    if (matchedRecipe && matchedRecipe.ingredients) {
+    // 1. ค้นหาจาก 169 เมนูใน Supabase ก่อน
+    const foundRecipe = supabaseRecipes.find(r => 
+      r.name.toLowerCase().includes(query) || query.includes(r.name.toLowerCase())
+    );
+
+    if (foundRecipe) {
       let totalCal = 0;
       let totalProtein = 0;
-      let totalCarbs = 0;
+      let totalCarb = 0;
       let totalFat = 0;
 
-      const ingredientsList: IngredientItem[] = matchedRecipe.ingredients.map((ing) => {
-        const info = matchNutritionInfo(ing);
-        const weight = 80;
+      // แกะวัตถุดิบจริงของเมนูนั้นแล้วคำนวณ Macro ตามสัดส่วนมาตรฐาน
+      const ingredientsList: IngredientItem[] = (foundRecipe.ingredients || []).map(ingName => {
+        const matchedKey = Object.keys(nutritionDB).find(k => ingName.includes(k) || k.includes(ingName));
+        const info = matchedKey ? nutritionDB[matchedKey] : null;
+
+        let defaultWeight = 50;
+        if (ingName.includes("ข้าว")) defaultWeight = 150;
+        else if (ingName.includes("หมู") || ingName.includes("ไก่") || ingName.includes("เนื้อ") || ingName.includes("กุ้ง")) defaultWeight = 80;
+        else if (info && (info.unit === "ช้อนโต๊ะ" || info.unit === "ฟอง" || info.unit === "ลูก")) defaultWeight = 15;
+
         if (info) {
-          const ratio = weight / info.baseAmount;
+          const ratio = defaultWeight / info.baseAmount;
           totalCal += info.cal * ratio;
           totalProtein += info.protein * ratio;
-          totalCarbs += info.carb * ratio;
           totalFat += info.fat * ratio;
+          totalCarb += info.carb * ratio;
         } else {
-          totalCal += 60;
-          totalProtein += 3;
-          totalCarbs += 5;
-          totalFat += 2;
+          totalCal += 40;
+          totalProtein += 2;
+          totalCarb += 5;
+          totalFat += 1;
         }
-        return { name: ing, weight };
+
+        return { name: ingName, weight: defaultWeight };
       });
 
-      const foundData: NutritionResult = {
-        foodName: matchedRecipe.name,
-        calories: Math.round(totalCal),
-        protein: Math.round(totalProtein),
-        carbs: Math.round(totalCarbs),
-        fat: Math.round(totalFat),
-        ingredients: ingredientsList,
+      // ถ้าใน Supabase มีระบุ kcal รวมของเมนูไว้ ให้ยึดค่านั้นเป็นหลัก
+      const dbKcalNumber = parseInt(foundRecipe.kcal?.replace(/[^0-9]/g, '') || '0', 10);
+      const calculatedCal = totalCal > 0 ? Math.round(totalCal) : 450;
+      const finalCalories = dbKcalNumber > 0 ? dbKcalNumber : calculatedCal;
+
+      const realData: NutritionResult = {
+        foodName: foundRecipe.name,
+        calories: finalCalories,
+        protein: Math.round(totalProtein) || 22,
+        carbs: Math.round(totalCarb) || 55,
+        fat: Math.round(totalFat) || 15,
+        ingredients: ingredientsList.length > 0 ? ingredientsList : [{ name: foundRecipe.name, weight: 250 }]
       };
 
-      setOriginalResult(JSON.parse(JSON.stringify(foundData)));
-      setEditableResult(JSON.parse(JSON.stringify(foundData)));
+      setOriginalResult(JSON.parse(JSON.stringify(realData)));
+      setEditableResult(JSON.parse(JSON.stringify(realData)));
       setPreviewUrl("https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=800&auto=format&fit=crop");
     } else {
-      // ค้นตรงใน Local DB
-      const matchedDbKey = Object.keys(nutritionDB).find((k) => k.toLowerCase().includes(query));
-      if (matchedDbKey) {
-        const item = nutritionDB[matchedDbKey];
+      // 2. ถ้าไม่เจอในเมนู ให้ค้นในฐานข้อมูลวัตถุดิบเดี่ยวๆ
+      const matchedKey = Object.keys(nutritionDB).find(k => 
+        k.toLowerCase().includes(query) || query.includes(k.toLowerCase())
+      );
+
+      if (matchedKey) {
+        const info = nutritionDB[matchedKey];
         const singleData: NutritionResult = {
-          foodName: matchedDbKey,
-          calories: item.cal,
-          protein: item.protein,
-          carbs: item.carb,
-          fat: item.fat,
-          ingredients: [{ name: matchedDbKey, weight: item.baseAmount }],
+          foodName: matchedKey,
+          calories: info.cal,
+          protein: info.protein,
+          carbs: info.carb,
+          fat: info.fat,
+          ingredients: [{ name: matchedKey, weight: info.baseAmount }]
         };
+
         setOriginalResult(JSON.parse(JSON.stringify(singleData)));
         setEditableResult(JSON.parse(JSON.stringify(singleData)));
         setPreviewUrl("https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=800&auto=format&fit=crop");
       } else {
-        alert(`ไม่พบข้อมูลสำหรับ "${manualSearchQuery}" ในฐานข้อมูล กรุณาลองใช้โหมดกำหนดวัตถุดิบเอง`);
+        alert(`❌ ไม่พบข้อมูลสำหรับ "${manualSearchQuery}" ในฐานข้อมูล 169 เมนู\nกรุณาตรวจสอบตัวสะกด หรือใช้โหมดคำนวณตามวัตถุดิบเองครับ`);
       }
     }
 
     setIsSearchingManual(false);
     setManualSearchQuery("");
   };
-
   const addIngredient = () => {
     if (!newIngredientName.trim() || !newIngredientWeight || !editableResult) return;
     setEditableResult({
