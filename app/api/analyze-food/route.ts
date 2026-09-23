@@ -2,7 +2,6 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// ขยายเวลา Timeout เป็น 30 วินาที ป้องกัน Serverless ตัดการทำงานระหว่างรับภาพ
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
@@ -45,10 +44,10 @@ export async function POST(req: Request) {
       },
     ];
 
-    // ลำดับโมเดล: เรียก 3.6-flash ก่อน ถ้าติด 503 จะสลับไป 3.5-flash-lite ทันที
+    // ใช้ gemini-3.5-flash-lite เป็นตัวหลัก ตอบกลับไวใน 1-2 วินาที ไม่ชนเพดาน Timeout ของ Vercel
     const modelsToTry = [
-      'gemini-3.6-flash',
       'gemini-3.5-flash-lite',
+      'gemini-3.5-flash',
     ];
 
     let lastError: unknown = null;
@@ -66,15 +65,13 @@ export async function POST(req: Request) {
         const responseText = result.response.text();
         const nutritionData = JSON.parse(responseText.trim());
 
-        // ส่งผลลัพธ์กลับทันทีเมื่อประมวลผลสำเร็จ
         return NextResponse.json(nutritionData);
       } catch (err) {
-        console.warn(`⚠️ โมเดล ${modelName} ใช้งานไม่ได้ กำลังสลับไปตัวถัดไป...`, (err as Error)?.message);
+        console.warn(`⚠️ โมเดล ${modelName} ไม่พร้อมใช้งาน กำลังลองตัวถัดไป...`, (err as Error)?.message);
         lastError = err;
       }
     }
 
-    // หากลองทุกลำดับแล้วยังไม่สำเร็จ
     throw lastError;
 
   } catch (error) {

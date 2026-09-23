@@ -290,7 +290,19 @@ export default function CalculatePage() {
         body: JSON.stringify({ imageBase64: base64Data, mimeType }),
       });
 
-      const responseData = await response.json();
+      // 🌟 อ่านเป็นข้อความดิบก่อน เพื่อป้องกัน syntax error จากหน้า error ของ Vercel
+      const rawText = await response.text();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let responseData: any;
+      
+    try {
+        responseData = JSON.parse(rawText);
+      } catch {
+        if (response.status === 504 || rawText.includes("An error occurred")) {
+          throw new Error("เซิร์ฟเวอร์ประมวลผลนานเกินกำหนด (Timeout) กรุณาลองใหม่อีกครั้ง");
+        }
+        throw new Error(`เซิร์ฟเวอร์ตอบกลับผิดพลาด (${response.status})`);
+      }
 
       if (!response.ok) {
         throw new Error(responseData.details || responseData.error || `Server Error (${response.status})`);
@@ -396,7 +408,7 @@ export default function CalculatePage() {
     
     // eslint-disable-next-line react-hooks/purity
     const currentId = Date.now().toString();
-  
+
     const currentTime = new Date().toISOString();
 
     const newLogEntry = {
@@ -472,9 +484,8 @@ export default function CalculatePage() {
       return;
     }
 
-    
+   
     const currentId = Date.now().toString();
-    
     const currentTime = new Date().toISOString();
 
     const newLogEntry = {
@@ -577,6 +588,7 @@ export default function CalculatePage() {
                   accept="image/*" 
                   capture="environment"
                   ref={cameraInputRef} 
+                  onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
                   onChange={(e) => e.target.files && e.target.files[0] && handleFileChange(e.target.files[0])} 
                   className="hidden" 
                 />
@@ -587,6 +599,7 @@ export default function CalculatePage() {
                   type="file" 
                   accept="image/*" 
                   ref={fileInputRef} 
+                  onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
                   onChange={(e) => e.target.files && e.target.files[0] && handleFileChange(e.target.files[0])} 
                   className="hidden" 
                 />
@@ -605,14 +618,14 @@ export default function CalculatePage() {
                 <div className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
                   <label 
                     htmlFor="direct-camera-input"
-                    className="flex-1 bg-[#f26522] hover:bg-orange-600 text-white font-bold py-4 px-6 rounded-2xl shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+                    className="flex-1 bg-[#f26522] hover:bg-orange-600 text-white font-bold py-4 px-6 rounded-2xl shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2 select-none"
                   >
                     <span>📷</span> ถ่ายรูปสด (เปิดกล้อง)
                   </label>
 
                   <label 
                     htmlFor="gallery-file-input"
-                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-4 px-6 rounded-2xl transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-4 px-6 rounded-2xl transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2 select-none"
                   >
                     <span>🖼️</span> เลือกจากอัลบั้ม
                   </label>
