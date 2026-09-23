@@ -72,7 +72,6 @@ export default function MyFridgePage() {
           setIngredients([]);
         }
       } else {
-        // เคลียร์ค่าเริ่มต้นออกทั้งหมด เป็นตู้เย็นว่างเปล่าสำหรับผู้ใช้ใหม่
         setIngredients([]);
       }
 
@@ -82,11 +81,13 @@ export default function MyFridgePage() {
     return () => clearTimeout(timer);
   }, []);
 
+  // ซิงค์บันทึกข้อมูลทุกครั้งที่รายการวัตถุดิบเปลี่ยนแปลง
   useEffect(() => {
     if (isMounted) {
       const dataStr = JSON.stringify(ingredients);
       localStorage.setItem("myFridgeItems", dataStr);
       localStorage.setItem("fridge", dataStr);
+      localStorage.setItem("fridgeIngredients", JSON.stringify(ingredients.map((i) => i.name.trim())));
       window.dispatchEvent(new Event("fridgeUpdated"));
     }
   }, [ingredients, isMounted]);
@@ -121,7 +122,10 @@ export default function MyFridgePage() {
 
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newItemName || !newItemAmount || !newItemDate) return;
+    const cleanName = newItemName.trim();
+    const cleanAmount = newItemAmount.trim();
+
+    if (!cleanName || !cleanAmount || !newItemDate) return;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -132,9 +136,9 @@ export default function MyFridgePage() {
 
     const newItem: Ingredient = {
       id: Date.now().toString(),
-      name: newItemName,
-      amount: newItemAmount,
-      icon: getIconForName(newItemName),
+      name: cleanName,
+      amount: cleanAmount,
+      icon: getIconForName(cleanName),
       daysLeft: daysLeft,
       expiryDateText: newItemDate,
       expiry_date: newItemDate,

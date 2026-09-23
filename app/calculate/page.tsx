@@ -37,9 +37,8 @@ interface ManualIngredientItem {
   carb: number;
 }
 
-// 📚 ฐานข้อมูลโภชนาการวัตถุดิบอาหารไทยแบบครอบคลุม
+// 📚 ฐานข้อมูลโภชนาการวัตถุดิบอาหารไทย
 const nutritionDB: Record<string, { cal: number; protein: number; fat: number; carb: number; unit: string; baseAmount: number; category: string }> = {
-  // 🥩 หมวดเนื้อสัตว์ & สัตว์ปีก (ต่อ 100 กรัม)
   "อกไก่": { cal: 165, protein: 31, fat: 3.6, carb: 0, unit: "กรัม", baseAmount: 100, category: "เนื้อสัตว์ & โปรตีน" },
   "สะโพกไก่": { cal: 209, protein: 24, fat: 12, carb: 0, unit: "กรัม", baseAmount: 100, category: "เนื้อสัตว์ & โปรตีน" },
   "น่องไก่": { cal: 172, protein: 28, fat: 6, carb: 0, unit: "กรัม", baseAmount: 100, category: "เนื้อสัตว์ & โปรตีน" },
@@ -53,8 +52,6 @@ const nutritionDB: Record<string, { cal: number; protein: number; fat: number; c
   "เนื้อวัว": { cal: 217, protein: 26, fat: 12, carb: 0, unit: "กรัม", baseAmount: 100, category: "เนื้อสัตว์ & โปรตีน" },
   "เนื้อเป็ด": { cal: 201, protein: 23, fat: 11, carb: 0, unit: "กรัม", baseAmount: 100, category: "เนื้อสัตว์ & โปรตีน" },
   "ตับหมู / ตับไก่": { cal: 135, protein: 21, fat: 4, carb: 3, unit: "กรัม", baseAmount: 100, category: "เนื้อสัตว์ & โปรตีน" },
-
-  // 🦐 หมวดอาหารทะเล (ต่อ 100 กรัม)
   "กุ้งขาว / กุ้งสด": { cal: 99, protein: 24, fat: 0.3, carb: 0.2, unit: "กรัม", baseAmount: 100, category: "อาหารทะเล" },
   "กุ้งแห้ง": { cal: 253, protein: 60, fat: 1.5, carb: 0, unit: "กรัม", baseAmount: 100, category: "อาหารทะเล" },
   "ปลาหมึกสด": { cal: 92, protein: 15.6, fat: 1.4, carb: 3.1, unit: "กรัม", baseAmount: 100, category: "อาหารทะเล" },
@@ -66,8 +63,6 @@ const nutritionDB: Record<string, { cal: number; protein: number; fat: number; c
   "ปลาดุก": { cal: 145, protein: 16, fat: 8.5, carb: 0, unit: "กรัม", baseAmount: 100, category: "อาหารทะเล" },
   "หอยแมลงภู่ / หอยลาย": { cal: 86, protein: 12, fat: 2.2, carb: 3.7, unit: "กรัม", baseAmount: 100, category: "อาหารทะเล" },
   "หอยนางรม": { cal: 68, protein: 7, fat: 2.5, carb: 4, unit: "กรัม", baseAmount: 100, category: "อาหารทะเล" },
-
-  // 🥚 หมวดไข่ & ผลิตภัณฑ์นม / แปรรูป
   "ไข่ไก่": { cal: 70, protein: 6, fat: 5, carb: 0.6, unit: "ฟอง", baseAmount: 1, category: "ไข่ & นม & แปรรูป" },
   "ไข่เป็ด": { cal: 130, protein: 9, fat: 9.6, carb: 1, unit: "ฟอง", baseAmount: 1, category: "ไข่ & นม & แปรรูป" },
   "ไข่นกกระทา": { cal: 14, protein: 1.2, fat: 1, carb: 0.1, unit: "ฟอง", baseAmount: 1, category: "ไข่ & นม & แปรรูป" },
@@ -80,8 +75,6 @@ const nutritionDB: Record<string, { cal: number; protein: number; fat: number; c
   "ไส้กรอก": { cal: 300, protein: 12, fat: 25, carb: 4, unit: "กรัม", baseAmount: 100, category: "ไข่ & นม & แปรรูป" },
   "หมูยอ": { cal: 210, protein: 13, fat: 14, carb: 8, unit: "กรัม", baseAmount: 100, category: "ไข่ & นม & แปรรูป" },
   "ปูอัด": { cal: 95, protein: 8, fat: 0.5, carb: 14, unit: "กรัม", baseAmount: 100, category: "ไข่ & นม & แปรรูป" },
-
-  // 🍜 หมวดข้าว & เส้น & แป้ง (ต่อ 100 กรัม)
   "ข้าวสวย": { cal: 130, protein: 2.7, fat: 0.3, carb: 28, unit: "กรัม", baseAmount: 100, category: "ข้าว & เส้น & แป้ง" },
   "ข้าวเหนียว": { cal: 190, protein: 3.5, fat: 0.5, carb: 42, unit: "กรัม", baseAmount: 100, category: "ข้าว & เส้น & แป้ง" },
   "วุ้นเส้น (ต้มสุก)": { cal: 80, protein: 0.2, fat: 0.1, carb: 20, unit: "กรัม", baseAmount: 100, category: "ข้าว & เส้น & แป้ง" },
@@ -90,8 +83,6 @@ const nutritionDB: Record<string, { cal: number; protein: number; fat: number; c
   "บะหมี่ไข่": { cal: 280, protein: 8, fat: 2, carb: 55, unit: "ก้อน", baseAmount: 1, category: "ข้าว & เส้น & แป้ง" },
   "ขนมจีน": { cal: 90, protein: 1.5, fat: 0.2, carb: 20, unit: "กรัม", baseAmount: 100, category: "ข้าว & เส้น & แป้ง" },
   "แป้งทอดกรอบ": { cal: 350, protein: 8, fat: 1, carb: 75, unit: "กรัม", baseAmount: 100, category: "ข้าว & เส้น & แป้ง" },
-
-  // 🥬 หมวดผัก & สมุนไพร & เห็ด (ต่อ 100 กรัม)
   "ผักคะน้า": { cal: 22, protein: 2.2, fat: 0.7, carb: 3.8, unit: "กรัม", baseAmount: 100, category: "ผัก & สมุนไพร" },
   "กะเพรา / โหระพา": { cal: 23, protein: 3.1, fat: 0.6, carb: 2.6, unit: "กรัม", baseAmount: 100, category: "ผัก & สมุนไพร" },
   "กะหล่ำปลี": { cal: 25, protein: 1.3, fat: 0.1, carb: 5.8, unit: "กรัม", baseAmount: 100, category: "ผัก & สมุนไพร" },
@@ -117,8 +108,6 @@ const nutritionDB: Record<string, { cal: number; protein: number; fat: number; c
   "ข่า / ขิง": { cal: 15, protein: 0.3, fat: 0.1, carb: 3.5, unit: "กรัม", baseAmount: 20, category: "ผัก & สมุนไพร" },
   "ต้นหอม / ผักชี": { cal: 5, protein: 0.3, fat: 0.1, carb: 1, unit: "กรัม", baseAmount: 10, category: "ผัก & สมุนไพร" },
   "ถั่วลิสง": { cal: 160, protein: 7, fat: 14, carb: 5, unit: "กรัม", baseAmount: 30, category: "ผัก & สมุนไพร" },
-
-  // 🧂 หมวดเครื่องปรุง & ไขมัน (ต่อ 1 ช้อนโต๊ะ / หรือตามระบุ)
   "น้ำมันพืช": { cal: 120, protein: 0, fat: 14, carb: 0, unit: "ช้อนโต๊ะ", baseAmount: 1, category: "เครื่องปรุง & ไขมัน" },
   "น้ำมันมะกอก / รำข้าว": { cal: 120, protein: 0, fat: 14, carb: 0, unit: "ช้อนโต๊ะ", baseAmount: 1, category: "เครื่องปรุง & ไขมัน" },
   "เนยสด": { cal: 100, protein: 0.1, fat: 11.5, carb: 0, unit: "ช้อนโต๊ะ", baseAmount: 1, category: "เครื่องปรุง & ไขมัน" },
@@ -136,7 +125,7 @@ const nutritionDB: Record<string, { cal: number; protein: number; fat: number; c
   "ผงชูรส": { cal: 0, protein: 0, fat: 0, carb: 0, unit: "ช้อนชา", baseAmount: 1, category: "เครื่องปรุง & ไขมัน" }
 };
 
-// 🌟 ฟังก์ชันบีบอัดภาพฝั่งเบราว์เซอร์: ป้องกันเพดาน 4.5 MB ของ Vercel
+// ฟังก์ชันบีบอัดภาพฝั่งเบราว์เซอร์
 const compressImage = (file: File): Promise<{ base64: string; mimeType: string }> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -176,18 +165,16 @@ const compressImage = (file: File): Promise<{ base64: string; mimeType: string }
 export default function CalculatePage() {
   const [activeMode, setActiveMode] = useState<"ai" | "manual">("ai");
 
-  // ================= State: ดึงเมนูจาก Supabase =================
   const [supabaseRecipes, setSupabaseRecipes] = useState<DbRecipe[]>([]);
   const [isLoadingRecipes, setIsLoadingRecipes] = useState(false);
 
-  // ================= State: AI Scanner =================
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
   const [originalResult, setOriginalResult] = useState<NutritionResult | null>(null);
   const [editableResult, setEditableResult] = useState<NutritionResult | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  
   const [isDragging, setIsDragging] = useState(false);
   const [manualSearchQuery, setManualSearchQuery] = useState("");
   const [isSearchingManual, setIsSearchingManual] = useState(false);
@@ -196,11 +183,9 @@ export default function CalculatePage() {
   const [newIngredientWeight, setNewIngredientWeight] = useState<number | "">("");
   const [isRecalculating, setIsRecalculating] = useState(false);
 
-  // Input refs
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ================= State: Manual Calculator =================
   const [customDishName, setCustomDishName] = useState("เมนูจัดเอง");
   const [selectedDbIng, setSelectedDbIng] = useState("อกไก่");
   const [manualInputAmount, setManualInputAmount] = useState<number>(100);
@@ -209,7 +194,6 @@ export default function CalculatePage() {
     { name: "น้ำมันพืช", amount: 1, unit: "ช้อนโต๊ะ", calPerUnit: 120, protein: 0, fat: 14, carb: 0 }
   ]);
 
-  // 🌟 ดึงข้อมูล 169 เมนูจาก Supabase ผ่าน API
   useEffect(() => {
     const fetchRecipes = async () => {
       setIsLoadingRecipes(true);
@@ -271,7 +255,6 @@ export default function CalculatePage() {
   const manualTotalFat = Math.round(manualIngList.reduce((sum, item) => sum + (item.fat * item.amount), 0));
   const manualTotalCarb = Math.round(manualIngList.reduce((sum, item) => sum + (item.carb * item.amount), 0));
 
-  // ---------------- Logic: AI Scanner ----------------
   const handleFileChange = (file: File) => {
     if (!file.type.startsWith("image/")) {
       alert("กรุณาอัปโหลดไฟล์รูปภาพเท่านั้นครับ");
@@ -413,7 +396,7 @@ export default function CalculatePage() {
     
     // eslint-disable-next-line react-hooks/purity
     const currentId = Date.now().toString();
-   
+  
     const currentTime = new Date().toISOString();
 
     const newLogEntry = {
@@ -456,7 +439,6 @@ export default function CalculatePage() {
     if (cameraInputRef.current) cameraInputRef.current.value = "";
   };
 
-  // ---------------- Logic: Manual Calculator ----------------
   const handleAddManualItem = () => {
     const info = nutritionDB[selectedDbIng];
     if (!info) return;
@@ -490,9 +472,9 @@ export default function CalculatePage() {
       return;
     }
 
-   
+    
     const currentId = Date.now().toString();
-   
+    
     const currentTime = new Date().toISOString();
 
     const newLogEntry = {
@@ -521,7 +503,7 @@ export default function CalculatePage() {
   return (
     <div className="min-h-screen bg-[#f8f9fa] font-sans pb-24 flex flex-col items-center">
       
-      {/* 🌟 Header กลาง */}
+      {/* Header */}
       <div className="w-full bg-white border-b border-gray-100 pt-14 pb-8 px-4 shadow-[0_10px_30px_rgb(0,0,0,0.02)] text-center relative z-10">
         <div className="inline-flex items-center gap-2 bg-orange-50 text-[#f26522] px-4 py-1.5 rounded-full font-bold text-sm mb-4 border border-orange-100">
           <span className="w-2 h-2 rounded-full bg-[#f26522] animate-pulse"></span>
@@ -534,7 +516,7 @@ export default function CalculatePage() {
           รู้แคลอรี่และสารอาหารทันที
         </h2>
 
-        {/* 🌟 แถบสลับโหมด */}
+        {/* แถบสลับโหมด */}
         <div className="inline-flex p-1.5 bg-gray-100/80 rounded-2xl border border-gray-200 shadow-inner max-w-md mx-auto mb-2">
           <button
             onClick={() => setActiveMode("ai")}
@@ -576,15 +558,19 @@ export default function CalculatePage() {
 
       <main className="w-full max-w-4xl mx-auto px-4 mt-8">
 
-        {/* ========================================================= */}
-        {/* 🌟 1. โหมดสแกนภาพด้วย AI (Gemini Vision)                     */}
-        {/* ========================================================= */}
+        {/* 1. โหมดสแกนภาพด้วย AI */}
         {activeMode === "ai" && (
           <>
             {!previewUrl ? (
-              <div className="w-full bg-white rounded-[2.5rem] border-2 border-dashed border-gray-200 p-8 text-center shadow-sm">
-                
-                {/* ช่องอัปโหลดแบบถ่ายสด (เปิดกล้องทันที 100%) */}
+              <div 
+                onDragOver={onDragOver} 
+                onDragLeave={onDragLeave} 
+                onDrop={onDrop}
+                className={`w-full bg-white rounded-[2.5rem] border-2 border-dashed p-8 text-center shadow-sm transition-all duration-300 ${
+                  isDragging ? "border-[#f26522] bg-orange-50 scale-[1.02]" : "border-gray-200"
+                }`}
+              >
+                {/* ช่องอัปโหลดแบบถ่ายสด */}
                 <input 
                   id="direct-camera-input"
                   type="file" 
@@ -605,18 +591,13 @@ export default function CalculatePage() {
                   className="hidden" 
                 />
 
-                <div 
-                  onDragOver={onDragOver} 
-                  onDragLeave={onDragLeave} 
-                  onDrop={onDrop}
-                  className="flex flex-col items-center justify-center mb-6"
-                >
+                <div className="flex flex-col items-center justify-center mb-6">
                   <div className="w-20 h-20 bg-orange-100 text-[#f26522] rounded-full flex items-center justify-center text-3xl mb-4 shadow-inner">
                     📸
                   </div>
                   <h3 className="text-2xl font-bold text-gray-800 mb-2">อัปโหลดรูปภาพอาหาร</h3>
                   <p className="text-gray-400 font-medium max-w-sm">
-                    ถ่ายรูปสดๆ จากมือถือ หรือเลือกรูปจากอัลบั้ม เพื่อให้ AI วิเคราะห์สารอาหาร
+                    ถ่ายรูปสดๆ จากกล้องมือถือ หรือเลือกรูปจากอัลบั้ม เพื่อให้ AI คำนวณสารอาหาร
                   </p>
                 </div>
 
@@ -643,7 +624,7 @@ export default function CalculatePage() {
                 <div className="w-full md:w-1/2 flex flex-col items-center">
                   <div className="relative w-full aspect-square rounded-3xl overflow-hidden bg-gray-100 shadow-inner border border-gray-100">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                    <img src={previewUrl || ""} alt="Preview" className="w-full h-full object-cover" />
                     {isAnalyzing && (
                       <div className="absolute inset-0 bg-[#f26522]/20 flex flex-col items-center justify-center backdrop-blur-[2px]">
                           <div className="absolute top-0 left-0 w-full h-1 bg-[#f26522] shadow-[0_0_15px_#f26522] animate-[scan_2s_ease-in-out_infinite]"></div>
@@ -773,13 +754,9 @@ export default function CalculatePage() {
           </>
         )}
 
-        {/* ========================================================= */}
-        {/* 🌟 2. โหมดคำนวณตามวัตถุดิบ (เชื่อม 169 เมนูจาก Supabase)       */}
-        {/* ========================================================= */}
+        {/* 2. โหมดคำนวณตามวัตถุดิบ */}
         {activeMode === "manual" && (
           <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 p-6 md:p-8 animate-fade-in">
-            
-            {/* Header & ชื่อเมนู */}
             <div className="border-b border-gray-100 pb-6 mb-6">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
                 <div>
@@ -797,26 +774,24 @@ export default function CalculatePage() {
                 </div>
               </div>
 
-              {/* 🌟 กล่องทางลัด: เลือกจากเมนูในฐานข้อมูล */}
               <div className="bg-orange-50/70 p-4 rounded-2xl border border-orange-200">
-               <select
-                onChange={(e) => handleSelectSupabaseRecipe(e.target.value)}
-                defaultValue=""
-                className="w-full bg-white border border-orange-200 rounded-xl px-4 py-2.5 text-sm font-bold text-gray-700 focus:outline-none focus:border-[#f26522] shadow-sm cursor-pointer"
-              >
-                <option value="" disabled>
-                  {isLoadingRecipes ? "กำลังโหลดรายชื่อเมนู..." : "-- คลิกเพื่อเลือกเมนูอาหาร --"}
-                </option>
+                <select
+                  onChange={(e) => handleSelectSupabaseRecipe(e.target.value)}
+                  defaultValue=""
+                  className="w-full bg-white border border-orange-200 rounded-xl px-4 py-2.5 text-sm font-bold text-gray-700 focus:outline-none focus:border-[#f26522] shadow-sm cursor-pointer"
+                >
+                  <option value="" disabled>
+                    {isLoadingRecipes ? "กำลังโหลดรายชื่อเมนู..." : "-- คลิกเพื่อเลือกเมนูอาหาร --"}
+                  </option>
                   {supabaseRecipes.map((r, idx) => (
-                <option key={idx} value={r.name}>
-                  🍳 {r.name} {r.kcal ? `(${r.kcal})` : ''}
-                </option>
-              ))}
-               </select>
-            </div>
+                    <option key={idx} value={r.name}>
+                      🍳 {r.name} {r.kcal ? `(${r.kcal})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            {/* ฟอร์มเลือกและเพิ่มวัตถุดิบเองทีละอย่าง */}
             <div className="bg-gray-50/70 p-5 rounded-2xl border border-gray-100 mb-8">
               <h4 className="font-extrabold text-gray-800 text-sm mb-3">➕ เพิ่มวัตถุดิบเสริม</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -861,7 +836,6 @@ export default function CalculatePage() {
               </div>
             </div>
 
-            {/* สรุปผลสารอาหารรวม */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
               <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100 text-center">
                 <span className="text-xs font-bold text-orange-600">แคลอรี่รวม</span>
@@ -881,7 +855,6 @@ export default function CalculatePage() {
               </div>
             </div>
 
-            {/* รายการวัตถุดิบในหม้อ */}
             <div>
               <h4 className="font-extrabold text-gray-800 text-base mb-4 border-l-4 border-[#f26522] pl-3">
                 📋 รายการวัตถุดิบในหม้อ ({manualIngList.length} อย่าง)
@@ -931,7 +904,6 @@ export default function CalculatePage() {
                 <span>💾</span> บันทึกเมนูนี้ลงสมุดไดอารี่
               </button>
             </div>
-
           </div>
         )}
 

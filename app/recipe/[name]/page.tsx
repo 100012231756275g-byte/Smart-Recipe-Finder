@@ -1,7 +1,7 @@
 // app/recipe/[name]/page.tsx
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@supabase/supabase-js"; 
 import { checkIngredientsSafety } from "@/lib/healthRules";
@@ -28,6 +28,16 @@ interface SavedItem {
   viewedAt?: number;
 }
 
+interface StoredFridgeItem {
+  name?: string;
+  daysLeft?: number;
+}
+
+interface SubstituteRule {
+  substitutes: string[];
+  note: string;
+}
+
 const diseaseRiskMap: Record<string, string[]> = {
   "โรคเบาหวาน": ["น้ำตาล", "นมข้น", "กะทิ", "น้ำเชื่อม", "น้ำผึ้ง"],
   "โรคความดันโลหิตสูง": ["น้ำปลา", "เกลือ", "ซีอิ๊ว", "ผงชูรส", "กะปิ", "เต้าเจี้ยว", "ซอสหอยนางรม"],
@@ -38,20 +48,33 @@ const diseaseRiskMap: Record<string, string[]> = {
   "โรคเกาต์": ["ไก่", "เป็ด", "เครื่องใน", "กะปิ", "ชะอม", "กระถิน", "หน่อไม้", "เห็ด", "ยอดผัก"]
 };
 
-// 📚 ฐานข้อมูลวัตถุดิบทดแทนสำหรับของที่ขาดในตู้เย็น
-const missingSubstituteMap: Record<string, string> = {
-  "หมูสับ": "ไก่สับ หรือ เนื้อสับ / เต้าหู้ขาวบด",
-  "หมู": "เนื้อไก่ หรือ เนื้อวัว / เห็ดออรินจิ",
-  "มะนาว": "น้ำมะขามเปียก หรือ น้ำส้มสายชู (ให้ความเปรี้ยวแทน)",
-  "กุ้งแห้ง": "เต้าหู้ทอดกรอบ หรือ ปลากรอบ",
-  "กุ้ง": "ไก่ หรือ ปลาหมึก / เต้าหู้ขาว",
-  "น้ำปลา": "ซีอิ๊วขาว หรือ เกลือป่น",
-  "น้ำตาล": "น้ำเชื่อม หรือ น้ำผึ้ง / หญ้าหวาน",
-  "กะทิ": "นมสดจืด หรือ นมถั่วเหลือง",
-  "พริกขี้หนู": "พริกป่น หรือ พริกชี้ฟ้า",
-  "หอมแดง": "หอมหัวใหญ่ (ซอยบาง)",
-  "กระเทียม": "กระเทียมผง หรือ หอมใหญ่สับ",
-  "ไข่ไก่": "เต้าหู้ไข่ หรือ เต้าหู้ขาว"
+// 💡 พจนานุกรมวัตถุดิบทดแทนอัจฉริยะ
+const smartSubstituteDictionary: Record<string, SubstituteRule> = {
+  "เป็ด": { substitutes: ["ไก่", "หมูกรอบ", "หมูแดง", "เนื้อ"], note: "ใช้เนื้อสัตว์อื่นแทนเนื้อเป็ดได้" },
+  "เป็ดย่าง": { substitutes: ["ไก่ย่าง", "ไก่ต้ม", "หมูกรอบ", "หมูแดง"], note: "ใช้เนื้อสัตว์ย่างหรือต้มอื่นแทนได้" },
+  "ข้าวสวย": { substitutes: ["ข้าวกล้อง", "ข้าวเหนียว", "เส้นหมี่"], note: "ใช้คาร์โบไฮเดรตอื่นแทนได้" },
+  "คะน้า": { substitutes: ["กวางตุ้ง", "ผักบุ้ง", "กะหล่ำปลี", "บรอกโคลี"], note: "ใช้ผักใบเขียวลวกแทนได้" },
+  "ขิงดอง": { substitutes: ["ขิง", "แตงกวา", "ต้นหอม"], note: "ใช้เครื่องเคียงตัดเลี่ยนแทนได้" },
+  "ซีอิ๊วดำ": { substitutes: ["ซีอิ๊วขาว", "ซอสปรุงรส", "น้ำมันหอย"], note: "ให้รสเค็มหวานและสีสันแทนได้" },
+  "น้ำราดเป็ด": { substitutes: ["ซอสปรุงรส", "น้ำมันหอย", "ซีอิ๊วขาว"], note: "ปรุงซอสราดแบบง่ายแทนได้" },
+  "พริกชี้ฟ้า": { substitutes: ["พริกขี้หนู", "พริกป่น", "พริกแห้ง"], note: "ให้รสเผ็ดแทนได้" },
+  "น้ำส้มสายชู": { substitutes: ["มะนาว", "มะขามเปียก"], note: "ให้รสเปรี้ยวตัดเลี่ยนแทนได้" },
+  "ข่า": { substitutes: ["ขิง", "กระชาย"], note: "ให้รสเผ็ดร้อนและกลิ่นดับคาวใกล้เคียง" },
+  "มะนาว": { substitutes: ["มะขามเปียก", "น้ำส้มสายชู", "เลมอน"], note: "ให้รสเปรี้ยวแทนได้" },
+  "กะทิ": { substitutes: ["นมสด", "นมจืด", "นมข้นจืด", "นมถั่วเหลือง"], note: "ให้ความหอมมันแทนได้" },
+  "น้ำปลา": { substitutes: ["ซีอิ๊วขาว", "เกลือ", "ซอสปรุงรส"], note: "ให้ความเค็มกลมกล่อมแทนได้" },
+  "น้ำตาล": { substitutes: ["น้ำเชื่อม", "น้ำผึ้ง", "หญ้าหวาน"], note: "ให้รสหวานแทนได้" },
+  "หมูสับ": { substitutes: ["ไก่สับ", "เนื้อสับ", "เต้าหู้ขาว"], note: "ใช้เนื้อสัตว์บดอื่นแทนได้" },
+  "หมู": { substitutes: ["ไก่", "เนื้อ", "ปลา", "เห็ดออรินจิ", "เต้าหู้"], note: "ใช้เนื้อสัตว์อื่นแทนได้" },
+  "ไก่": { substitutes: ["หมู", "กุ้ง", "ปลา", "เต้าหู้"], note: "ใช้เนื้อสัตว์อื่นแทนได้" },
+  "กุ้ง": { substitutes: ["ปลาหมึก", "ปลา", "ไก่", "เต้าหู้"], note: "ใช้โปรตีนซีฟู้ดหรือเนื้ออื่นแทนได้" },
+  "กระเทียม": { substitutes: ["หอมใหญ่", "หอมแดง", "กระเทียมผง"], note: "ให้กลิ่นหอมเจียวแทนได้" },
+  "หอมแดง": { substitutes: ["หอมหัวใหญ่", "หอมใหญ่", "ต้นหอม"], note: "ให้ความหวานและกลิ่นหอมแทนได้" },
+  "พริกขี้หนู": { substitutes: ["พริกป่น", "พริกชี้ฟ้า", "พริกแห้ง", "พริกไทย"], note: "ให้รสเผ็ดแทนได้" },
+  "พริก": { substitutes: ["พริกป่น", "พริกชี้ฟ้า", "พริกแห้ง", "พริกไทย"], note: "ให้รสเผ็ดแทนได้" },
+  "ใบกะเพรา": { substitutes: ["ใบโหระพา", "ใบแมงลัก"], note: "ให้กลิ่นสมุนไพรแทนได้" },
+  "เห็ด": { substitutes: ["เต้าหู้", "ข้าวโพดอ่อน", "แครอท"], note: "ให้เนื้อสัมผัสแทนได้" },
+  "ไข่ไก่": { substitutes: ["เต้าหู้ไข่", "เต้าหู้ขาว"], note: "ให้โปรตีนนุ่มแทนได้" }
 };
 
 const highFatIngredients = ["กะทิ", "หมูสามชั้น", "หนังหมู", "น้ำมัน", "เนย", "หมูกรอบ", "คอหมู"];
@@ -77,7 +100,7 @@ function RecipeDetailContent() {
   const [userBMIStatus, setUserBMIStatus] = useState<string | null>(null);
   const [userTDEE, setUserTDEE] = useState<number | null>(null);
   const [userAge, setUserAge] = useState<number | null>(null);
-  const [userFridge, setUserFridge] = useState<string[]>([]); // 🧊 เก็บรายการของในตู้เย็น
+  const [userFridge, setUserFridge] = useState<string[]>([]); 
   
   const [currentUserContact, setCurrentUserContact] = useState<string>("");
 
@@ -86,8 +109,64 @@ function RecipeDetailContent() {
   const [imageError, setImageError] = useState(false);
   const [isWarningOpen, setIsWarningOpen] = useState(false);
 
+  // ฟังก์ชันอ่านข้อมูลจากตู้เย็นแบบ Real-time
+  const loadFridgeData = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const savedFridgeStr =
+      localStorage.getItem("myFridgeItems") ||
+      localStorage.getItem("fridge") ||
+      localStorage.getItem("fridgeIngredients") ||
+      localStorage.getItem("myFridge") ||
+      localStorage.getItem("selectedIngredients");
+
+    if (savedFridgeStr) {
+      try {
+        const parsed = JSON.parse(savedFridgeStr);
+        if (Array.isArray(parsed)) {
+          const names = parsed
+            .filter((item: string | StoredFridgeItem) => 
+              typeof item === "string" || item.daysLeft === undefined || item.daysLeft >= 0
+            )
+            .map((item: string | StoredFridgeItem) => 
+              typeof item === "string" ? item.trim() : (item?.name || "").trim()
+            )
+            .filter(Boolean);
+          setUserFridge(names);
+          return;
+        }
+      } catch {
+        setUserFridge(savedFridgeStr.split(",").map(i => i.trim()).filter(Boolean));
+        return;
+      }
+    }
+    setUserFridge([]);
+  }, []);
+
+  // ฟังก์ชันจำลองของในตู้เย็นสำหรับกดทดสอบเดโมหน้างาน
+  const handleLoadDemoFridge = () => {
+    const demoItems = [
+      { id: "1", name: "ข้าวสวย", amount: "1 ถ้วย", icon: "🍚", daysLeft: 2, expiryDateText: "2 วัน" },
+      { id: "2", name: "ไก่", amount: "300 กรัม", icon: "🍗", daysLeft: 3, expiryDateText: "3 วัน" },
+      { id: "3", name: "ซีอิ๊วขาว", amount: "1 ขวด", icon: "🍶", daysLeft: 30, expiryDateText: "30 วัน" },
+      { id: "4", name: "กวางตุ้ง", amount: "1 กำ", icon: "🥬", daysLeft: 4, expiryDateText: "4 วัน" },
+      { id: "5", name: "ขิง", amount: "1 แง่ง", icon: "🫚", daysLeft: 7, expiryDateText: "7 วัน" }
+    ];
+    localStorage.setItem("myFridgeItems", JSON.stringify(demoItems));
+    localStorage.setItem("fridge", JSON.stringify(demoItems));
+    loadFridgeData();
+    window.dispatchEvent(new Event("fridgeUpdated"));
+  };
+
   useEffect(() => {
+    // 1. ผูก Event Listener ดักจับการอัปเดตตู้เย็น
+    window.addEventListener("fridgeUpdated", loadFridgeData);
+    window.addEventListener("storage", loadFridgeData);
+    window.addEventListener("focus", loadFridgeData);
+
+    // 2. เรียกโหลดข้อมูลใน setTimeout เพื่อป้องกัน Warning set-state-in-effect
     const timer = setTimeout(() => {
+      loadFridgeData();
+
       const loggedIn = sessionStorage.getItem("isLoggedIn") === "true";
       setIsUserLoggedIn(loggedIn);
 
@@ -107,23 +186,10 @@ function RecipeDetailContent() {
       if (savedBMIStatus) setUserBMIStatus(savedBMIStatus);
       
       const savedTDEE = localStorage.getItem("userTDEE");
-      if (savedTDEE) setUserTDEE(parseInt(savedTDEE));
+      if (savedTDEE) setUserTDEE(parseInt(savedTDEE, 10));
 
       const savedAge = localStorage.getItem("userAge");
-      if (savedAge) setUserAge(parseInt(savedAge));
-
-      // 🧊 ดึงข้อมูลวัตถุดิบในตู้เย็นของผู้ใช้
-      const savedFridgeStr = localStorage.getItem("fridgeIngredients") || localStorage.getItem("myFridge") || localStorage.getItem("selectedIngredients");
-      if (savedFridgeStr) {
-        try {
-          const parsed = JSON.parse(savedFridgeStr);
-          if (Array.isArray(parsed)) {
-            setUserFridge(parsed.map((item: string | { name?: string }) => typeof item === 'string' ? item : (item?.name || "")));
-          }
-        } catch {
-          setUserFridge(savedFridgeStr.split(",").map(i => i.trim()));
-        }
-      }
+      if (savedAge) setUserAge(parseInt(savedAge, 10));
     }, 0);
 
     const loadRecipe = async () => {
@@ -179,8 +245,14 @@ function RecipeDetailContent() {
     };
 
     if (params) loadRecipe();
-    return () => clearTimeout(timer);
-  }, [params]);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("fridgeUpdated", loadFridgeData);
+      window.removeEventListener("storage", loadFridgeData);
+      window.removeEventListener("focus", loadFridgeData);
+    };
+  }, [params, loadFridgeData]);
 
   useEffect(() => {
     const checkFavoriteStatus = async () => {
@@ -193,15 +265,8 @@ function RecipeDetailContent() {
             .eq('user_contact', currentUserContact)
             .maybeSingle(); 
           
-          if (error) {
-            console.error("เช็ครายการโปรดมีปัญหา:", error);
-          }
-
-          if (data) {
-            setIsFavorite(true);
-          } else {
-            setIsFavorite(false);
-          }
+          if (error) console.error("เช็ครายการโปรดมีปัญหา:", error);
+          setIsFavorite(!!data);
         } catch (err) {
           console.error("เช็ครายการโปรดผิดพลาด:", err);
         }
@@ -232,9 +297,9 @@ function RecipeDetailContent() {
     let pool = allRecipesList;
 
     if (isHalalMode) {
-      pool = allRecipesList.filter(recipe => {
-        const isNameNonHalal = nonHalalKeywords.some(keyword => recipe.name.includes(keyword));
-        const hasNonHalalIngredient = recipe.ingredients?.some(ing => 
+      pool = allRecipesList.filter(r => {
+        const isNameNonHalal = nonHalalKeywords.some(keyword => r.name.includes(keyword));
+        const hasNonHalalIngredient = r.ingredients?.some(ing => 
           nonHalalKeywords.some(keyword => ing.includes(keyword))
         );
         return !isNameNonHalal && !hasNonHalalIngredient;
@@ -267,7 +332,7 @@ function RecipeDetailContent() {
     
     if (!recipe) return;
 
-    const kcalNumber = recipe.kcal ? parseInt(recipe.kcal.replace(/\D/g, '')) : 0;
+    const kcalNumber = recipe.kcal ? parseInt(recipe.kcal.replace(/\D/g, ''), 10) : 0;
 
     try {
       if (isFavorite) {
@@ -303,7 +368,7 @@ function RecipeDetailContent() {
   };
 
   if (isLoading && allRecipesList.length === 0) {
-    return <div className="min-h-screen flex items-center justify-center font-bold text-gray-500 text-xl bg-gray-50">กำลังเตรียมระบบสุ่มอาหาร... 🍳</div>;
+    return <div className="min-h-screen flex items-center justify-center font-bold text-gray-500 text-xl bg-gray-50">กำลังเตรียมระบบสูตรอาหาร... 🍳</div>;
   }
 
   if (!hasRandomized) {
@@ -314,7 +379,7 @@ function RecipeDetailContent() {
             <div className="w-24 h-24 bg-orange-100 rounded-full flex items-center justify-center text-5xl mb-6 animate-bounce">🎲</div>
             <h1 className="text-3xl font-extrabold text-gray-900 mb-3">มื้อนี้กินอะไรดี?</h1>
             <p className="text-gray-500 mb-8 text-sm leading-relaxed">
-              หากเลือกไม่ถูกว่าจะกินอะไร ให้ระบบสุ่มเลือกเมนูอาหารที่อร่อย พร้อมเช็คความปลอดภัยต่อสุขภาพของคุณให้แบบอัตโนมัติ!
+              หากเลือกไม่ถูกว่าจะกินอะไร ให้ระบบสุ่มเลือกเมนูอาหารที่อร่อย พร้อมเช็คของในตู้เย็นและความปลอดภัยต่อสุขภาพให้แบบอัตโนมัติ!
             </p>
             <button
               onClick={handleRandomRecipe}
@@ -339,9 +404,47 @@ function RecipeDetailContent() {
     );
   }
 
-  // 🌟 ประมวลผลวัตถุดิบและคำนวณวัตถุดิบทดแทนจาก lib/healthRules
+  // --- ตรรกะตรวจสอบวัตถุดิบกับตู้เย็น (ทำงานเสมอ) ---
+  const getFridgeItemStatus = (ingName: string) => {
+    const cleanIng = ingName.toLowerCase();
+
+    // 1. ตรวจว่ามีในตู้เย็นหรือไม่
+    const directMatch = userFridge.find(fItem => {
+      const cleanF = fItem.toLowerCase();
+      return cleanIng.includes(cleanF) || cleanF.includes(cleanIng);
+    });
+
+    if (directMatch) {
+      return { status: "available", badge: "มีในตู้เย็นแล้ว 🧊", subItem: directMatch, note: null };
+    }
+
+    // 2. ตรวจว่าในตู้เย็นมีของที่ใช้ทดแทนได้หรือไม่
+    for (const [key, rule] of Object.entries(smartSubstituteDictionary)) {
+      if (cleanIng.includes(key.toLowerCase())) {
+        const availableSub = rule.substitutes.find(subCandidate =>
+          userFridge.some(fItem => {
+            const cleanF = fItem.toLowerCase();
+            return cleanF.includes(subCandidate.toLowerCase()) || subCandidate.toLowerCase().includes(cleanF);
+          })
+        );
+
+        if (availableSub) {
+          return {
+            status: "substitute",
+            badge: `ในตู้เย็นมี "${availableSub}" แทนได้ 💡`,
+            subItem: availableSub,
+            note: rule.note
+          };
+        }
+      }
+    }
+
+    // 3. ไม่มีของ และไม่มีตัวทดแทนในตู้เย็น
+    return { status: "missing", badge: "ไม่มีในตู้เย็น (ของขาด) ❌", subItem: null, note: null };
+  };
+
   const bmiNumber = userBMIStatus && (userBMIStatus.includes("อ้วน") || userBMIStatus.includes("ท้วม")) ? 26 : 21;
-  const { safeIngredients } = (recipe && isUserLoggedIn)
+  const { safeIngredients } = isUserLoggedIn
     ? checkIngredientsSafety(recipe.ingredients || [], {
         allergies: userAllergies,
         chronicDiseases: userDiseases,
@@ -349,34 +452,25 @@ function RecipeDetailContent() {
       })
     : { safeIngredients: recipe.ingredients || [] };
 
-  // 🧊 คำนวณวัตถุดิบที่ขาด และสัดส่วนความพร้อมในตู้เย็น
   const rawIngredients = recipe.ingredients || [];
-  const missingIngredients: string[] = [];
-  const availableIngredients: string[] = [];
+  const readyItems: string[] = [];
+  const substituteItems: { missing: string; replaceWith: string; note: string }[] = [];
+  const missingItems: string[] = [];
 
   rawIngredients.forEach((ing) => {
-    const isAvailable = userFridge.some((fItem) => fItem && (ing.includes(fItem) || fItem.includes(ing)));
-    if (isAvailable) {
-      availableIngredients.push(ing);
+    const check = getFridgeItemStatus(ing);
+    if (check.status === "available") {
+      readyItems.push(ing);
+    } else if (check.status === "substitute") {
+      substituteItems.push({ missing: ing, replaceWith: check.subItem || "", note: check.note || "" });
     } else {
-      missingIngredients.push(ing);
+      missingItems.push(ing);
     }
   });
 
   const readyPercentage = rawIngredients.length > 0 
-    ? Math.round((availableIngredients.length / rawIngredients.length) * 100) 
+    ? Math.round(((readyItems.length + substituteItems.length) / rawIngredients.length) * 100)
     : 0;
-
-  // หาคำแนะนำปรับสูตรสำหรับของที่ขาด
-  const missingSubstitutes: { missing: string; replaceWith: string }[] = [];
-  missingIngredients.forEach((missingItem) => {
-    for (const [key, replaceWith] of Object.entries(missingSubstituteMap)) {
-      if (missingItem.includes(key)) {
-        missingSubstitutes.push({ missing: key, replaceWith });
-        break;
-      }
-    }
-  });
 
   let allergicIngredients: string[] = [];
   const diseaseWarnings: { disease: string; ingredients: string[] }[] = [];
@@ -409,7 +503,7 @@ function RecipeDetailContent() {
     }
 
     if (userBMIStatus && userTDEE && recipe.kcal) {
-      const recipeKcal = parseInt(recipe.kcal.replace(/\D/g, '')); 
+      const recipeKcal = parseInt(recipe.kcal.replace(/\D/g, ''), 10); 
       const mealQuota = userTDEE / 3; 
       
       const isOverweight = userBMIStatus.includes("อ้วน") || userBMIStatus.includes("ท้วม");
@@ -423,7 +517,9 @@ function RecipeDetailContent() {
       }
       
       if (isUnderweight) {
-        const hasProtein = recipe.ingredients?.some(ing => ing.includes("เนื้อ") || ing.includes("หมู") || ing.includes("ไก่") || ing.includes("ไข่") || ing.includes("ปลา"));
+        const hasProtein = recipe.ingredients?.some(ing => 
+          ing.includes("เนื้อ") || ing.includes("หมู") || ing.includes("ไก่") || ing.includes("ไข่") || ing.includes("ปลา")
+        );
         if (hasProtein && !isNaN(recipeKcal) && recipeKcal >= (mealQuota * 0.8)) {
           isUnderweightRecommended = true; 
         }
@@ -442,12 +538,13 @@ function RecipeDetailContent() {
     <div className="min-h-screen bg-gray-50 font-sans pb-20">
       <main className="max-w-4xl mx-auto mt-8 px-4">
 
+        {/* แถบเตือนสุขภาพ */}
         {isUserLoggedIn && hasAnyWarning && (
           <div className={`border-2 rounded-2xl mb-6 shadow-sm overflow-hidden transition-all duration-300 ${hasAllergy ? 'bg-red-50 border-red-300' : 'bg-orange-50 border-orange-300'}`}>
             <div className="px-5 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
               <div className={`font-bold flex items-center gap-3 ${hasAllergy ? 'text-red-600' : 'text-orange-600'}`}>
                 <span className="text-2xl animate-pulse">{hasAllergy ? '🚨' : '⚠️'}</span>
-                <span>ระบบตรวจพบข้อจำกัดสุขภาพ: ปรับรายการวัตถุดิบทดแทนให้แล้ว</span>
+                <span>ระบบตรวจพบข้อจำกัดสุขภาพ: มีการคัดกรองวัตถุดิบให้คุณ</span>
               </div>
               <button onClick={() => setIsWarningOpen(!isWarningOpen)} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${hasAllergy ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
                 {isWarningOpen ? 'ซ่อนคำอธิบาย' : 'ดูคำอธิบาย'}
@@ -460,7 +557,7 @@ function RecipeDetailContent() {
                   {hasAllergy && (
                     <div>
                       <h4 className="font-extrabold text-red-700 mb-2">🔴 อาการแพ้อาหาร</h4>
-                      <p className="text-red-600 text-sm ml-8 font-semibold">พบส่วนผสมที่คุณแพ้ คือ {allergicIngredients.join(", ")} (ระบบทำการปรับเปลี่ยนวัตถุดิบทดแทนให้ด้านล่าง)</p>
+                      <p className="text-red-600 text-sm ml-8 font-semibold">พบส่วนผสมที่คุณแพ้ คือ {allergicIngredients.join(", ")}</p>
                     </div>
                   )}
                   {hasDiseaseRisk && (
@@ -503,32 +600,20 @@ function RecipeDetailContent() {
         )}
 
         {isUserLoggedIn && isUnderweightRecommended && !hasAllergy && !hasDiseaseRisk && (
-           <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-4 rounded-2xl font-bold mb-6 text-center text-sm shadow-sm flex items-center justify-center gap-2">
+          <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-4 rounded-2xl font-bold mb-6 text-center text-sm shadow-sm flex items-center justify-center gap-2">
             <span>💪</span> เมนูแนะนำ! สารอาหารและแคลอรี่เหมาะสำหรับช่วยเพิ่มน้ำหนักของคุณครับ
           </div>
         )}
 
-        {!isUserLoggedIn && (
-           <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-2xl font-bold mb-6 text-center text-sm shadow-sm flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-xl">📋</span>
-              <span>เข้าสู่ระบบเพื่อวิเคราะห์ความเสี่ยงสุขภาพและบันทึกรายการโปรด</span>
-            </div>
-            <button onClick={() => router.push("/login")} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg transition-colors shadow-sm">
-              เข้าสู่ระบบ
-            </button>
-          </div>
-        )}
-
         <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 p-6 md:p-8">
-          <div className="flex flex-col md:flex-row gap-8 mb-10">
+          <div className="flex flex-col md:flex-row gap-8 mb-8">
             <div className="relative w-full md:w-1/2 h-64 bg-gray-100 rounded-3xl overflow-hidden shadow-sm flex items-center justify-center">
-              {/* Badge แสดงความพร้อมของวัตถุดิบในตู้เย็น */}
-              {userFridge.length > 0 && (
-                <div className="absolute top-4 right-4 z-20 bg-[#f26522] text-white text-xs font-extrabold px-3 py-1.5 rounded-full shadow-md">
-                  พร้อม {readyPercentage}%
-                </div>
-              )}
+              <div className={`absolute top-4 right-4 z-20 text-white text-xs font-black px-3.5 py-1.5 rounded-full shadow-md ${
+                readyPercentage >= 70 ? "bg-emerald-500" : readyPercentage > 0 ? "bg-amber-500" : "bg-red-500"
+              }`}>
+                🧊 ตู้เย็นพร้อม {readyPercentage}%
+              </div>
+
               {!imageLoaded && !imageError && (
                 <div className="absolute flex flex-col items-center justify-center text-gray-400">
                   <div className="animate-spin rounded-full h-8 w-8 border-4 border-[#f26522] border-t-transparent mb-2"></div>
@@ -574,51 +659,139 @@ function RecipeDetailContent() {
             </div>
           </div>
 
-          {/* 🌟 กล่องแสดงรายการวัตถุดิบที่ขาด และคำแนะนำปรับสูตรเหมือนรูปแรก */}
-          {userFridge.length > 0 && missingIngredients.length > 0 && (
-            <div className="mb-8 p-5 bg-[#fffaf5] border border-orange-200/80 rounded-2xl shadow-sm">
-              <div className="text-red-500 font-bold text-sm mb-3 leading-relaxed">
-                <span className="mr-1">❌</span> <strong>ขาด:</strong> {missingIngredients.join(", ")}
+          {/* การ์ดสรุปการเชื่อมต่อตู้เย็น */}
+          <div className="mb-8 p-5 rounded-2xl border transition-all bg-[#fffaf5] border-orange-200 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🧊</span>
+                <h3 className="font-extrabold text-sm sm:text-base text-gray-900">
+                  สถานะวัตถุดิบกับตู้เย็นของคุณ ({readyItems.length + substituteItems.length}/{rawIngredients.length})
+                </h3>
               </div>
-
-              {missingSubstitutes.length > 0 && (
-                <div className="bg-[#fff6ea] p-4 rounded-xl border border-orange-100">
-                  <div className="text-orange-900 font-extrabold text-sm mb-2 flex items-center gap-1.5">
-                    <span>💡</span> คำแนะนำปรับสูตร:
-                  </div>
-                  <div className="space-y-1.5 text-xs text-orange-950">
-                    {missingSubstitutes.map((sub, idx) => (
-                      <p key={idx} className="leading-relaxed">
-                        ขาด <strong>{sub.missing}</strong> ➔ ใช้: <span className="font-semibold text-orange-800">{sub.replaceWith}</span>
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleLoadDemoFridge}
+                  className="text-[11px] font-bold bg-orange-100 hover:bg-orange-200 text-orange-800 px-2.5 py-1 rounded-lg transition-colors border border-orange-200"
+                  title="คลิกเพื่อจำลองของในตู้เย็นสำหรับพรีเซนต์สด"
+                >
+                  ⚡ จำลองของในตู้เย็น (Demo)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => router.push("/my-fridge")}
+                  className="text-xs font-bold text-[#f26522] hover:underline"
+                >
+                  ไปตู้เย็นของฉัน →
+                </button>
+              </div>
             </div>
-          )}
 
-          {/* 📋 รายการวัตถุดิบที่ต้องใช้ */}
+            {userFridge.length === 0 && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-semibold mb-2">
+                ⚠️ ตู้เย็นของคุณยังไม่มีรายการวัตถุดิบที่บันทึกไว้ (ระบบแสดงสถานะของขาดทั้งหมด {rawIngredients.length} รายการ) 
+                <br className="hidden sm:inline" /> สามารถกดปุ่ม <strong>&quot;⚡ จำลองของในตู้เย็น (Demo)&quot;</strong> ด้านบน หรือไปเพิ่มของที่หน้าตู้เย็นได้เลยครับ
+              </div>
+            )}
+
+            {missingItems.length > 0 && (
+              <div className="text-red-600 font-bold text-xs sm:text-sm mb-2.5 flex items-start gap-1.5">
+                <span className="shrink-0 mt-0.5">❌</span>
+                <span><strong>ของที่ขาดในตู้เย็น ({missingItems.length} อย่าง):</strong> {missingItems.join(", ")}</span>
+              </div>
+            )}
+
+            {substituteItems.length > 0 && (
+              <div className="mt-3 p-3.5 bg-amber-50/90 border border-amber-200 rounded-xl space-y-1.5">
+                <div className="text-amber-900 font-extrabold text-xs flex items-center gap-1.5">
+                  <span>💡</span> ตรวจพบของในตู้เย็นที่ใช้ทดแทนได้:
+                </div>
+                {substituteItems.map((sub, idx) => (
+                  <p key={idx} className="text-xs text-amber-950 leading-relaxed">
+                    • ขาด <strong>{sub.missing}</strong> แต่ในตู้เย็นมี <strong>&quot;{sub.replaceWith}&quot;</strong> ({sub.note})
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {userFridge.length > 0 && missingItems.length === 0 && (
+              <div className="text-emerald-600 font-extrabold text-xs sm:text-sm flex items-center gap-1.5">
+                <span>🎉</span> วัตถุดิบในตู้เย็นของคุณพร้อมครบถ้วน สามารถลงมือทำอาหารได้ทันที!
+              </div>
+            )}
+          </div>
+
+          {/* รายการวัตถุดิบที่ต้องใช้ */}
           <div className="mb-10">
-            <h2 className="text-xl font-bold text-gray-800 mb-5 border-l-4 border-[#f26522] pl-3">📋 วัตถุดิบที่ต้องใช้</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-orange-50/50 p-5 rounded-2xl">
+            <div className="flex items-center justify-between mb-4 border-l-4 border-[#f26522] pl-3">
+              <h2 className="text-xl font-bold text-gray-800">📋 วัตถุดิบที่ต้องใช้</h2>
+              <span className="text-xs text-gray-500 font-medium">
+                {userFridge.length > 0 ? `เช็คอัตโนมัติจากของในตู้เย็น (${userFridge.length} รายการ)` : "ยังไม่มีข้อมูลในตู้เย็น"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
               {safeIngredients.map((ing: string, i: number) => {
-                const isReplaced = ing.includes("(เปลี่ยนเป็น:");
+                const fridgeStatus = getFridgeItemStatus(ing);
                 const isAllergy = isUserLoggedIn && userAllergies.some(allergy => ing.includes(allergy));
                 const isDiseaseRisk = isUserLoggedIn && diseaseWarnings.some(dw => dw.ingredients.includes(ing));
 
                 return (
-                  <div key={i} className="flex items-start gap-3 text-gray-700 font-medium">
-                    <div className="w-2 h-2 bg-[#f26522] rounded-full mt-2"></div>
-                    <span className={isReplaced ? "text-orange-700 font-bold bg-orange-100/80 px-2 py-1 rounded-lg border border-orange-200" : (isAllergy ? "text-red-500 font-extrabold" : (isDiseaseRisk ? "text-orange-500 font-extrabold" : ""))}>
-                      {ing} {isAllergy && " 🚨"} {isDiseaseRisk && !isAllergy && " ⚠️"}
-                    </span>
+                  <div
+                    key={i}
+                    className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between gap-2 shadow-xs ${
+                      fridgeStatus.status === "available"
+                        ? "bg-emerald-50/60 border-emerald-300"
+                        : fridgeStatus.status === "substitute"
+                        ? "bg-amber-50/70 border-amber-300"
+                        : "bg-red-50/60 border-red-300"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-2.5">
+                        <div className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${
+                          fridgeStatus.status === "available"
+                            ? "bg-emerald-500"
+                            : fridgeStatus.status === "substitute"
+                            ? "bg-amber-500"
+                            : "bg-red-500"
+                        }`} />
+                        <span className={`text-sm font-extrabold ${
+                          isAllergy
+                            ? "text-red-600 line-through"
+                            : isDiseaseRisk
+                            ? "text-orange-600"
+                            : "text-gray-800"
+                        }`}>
+                          {ing}
+                          {isAllergy && " 🚨"}
+                          {isDiseaseRisk && !isAllergy && " ⚠️"}
+                        </span>
+                      </div>
+
+                      <span className={`text-[11px] font-black px-2 py-0.5 rounded-lg shrink-0 border shadow-2xs ${
+                        fridgeStatus.status === "available"
+                          ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                          : fridgeStatus.status === "substitute"
+                          ? "bg-amber-100 text-amber-900 border-amber-300"
+                          : "bg-red-100 text-red-700 border-red-300"
+                      }`}>
+                        {fridgeStatus.badge}
+                      </span>
+                    </div>
+
+                    {fridgeStatus.status === "substitute" && fridgeStatus.note && (
+                      <p className="text-[11px] font-medium text-amber-950 bg-amber-100/70 px-2.5 py-1 rounded-lg">
+                        💡 ในตู้เย็นมี <strong>&quot;{fridgeStatus.subItem}&quot;</strong>: {fridgeStatus.note}
+                      </p>
+                    )}
                   </div>
                 );
               })}
             </div>
           </div>
 
+          {/* ขั้นตอนการทำอาหาร */}
           <div className="mb-12">
             <h2 className="text-xl font-bold text-gray-800 mb-5 border-l-4 border-green-500 pl-3">👨‍🍳 ขั้นตอนการทำอาหาร</h2>
             <div className="flex flex-col gap-5">
@@ -649,7 +822,6 @@ function RecipeDetailContent() {
               
               {(() => {
                 const fromPage = searchParams.get("from") || "/recipe1";
-                
                 let buttonLabel = "กลับไปหน้าสุ่มเมนู"; 
                 if (fromPage.includes("/search-ingredients")) {
                   buttonLabel = "กลับไปหน้าผสมวัตถุดิบ";
