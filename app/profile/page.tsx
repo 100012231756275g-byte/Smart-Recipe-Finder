@@ -1,7 +1,7 @@
 // app/profile/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -28,117 +28,151 @@ export default function ProfilePage() {
   const [userBMIStatus, setUserBMIStatus] = useState<string | null>(null);
   const [userTDEE, setUserTDEE] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loadUserData = async () => {
-      // 1. ตรวจสอบสถานะล็อกอิน
-      const sessionStatus = sessionStorage.getItem("isLoggedIn") === "true";
-      const localStatus = localStorage.getItem("isLoggedIn") === "true";
-      const loggedIn = sessionStatus || localStatus;
-      setIsUserLoggedIn(loggedIn);
+  // 🌟 State จำนวนวัตถุดิบในตู้เย็น
+  const [fridgeCount, setFridgeCount] = useState<number>(0);
 
-      // 2. ดึงจาก Cache ชั่วคราวขึ้นมาก่อน
-      const savedImage = localStorage.getItem("profileImage");
-      if (savedImage) setProfileImage(savedImage);
+  const loadUserData = useCallback(async () => {
+    // 1. ตรวจสอบสถานะล็อกอิน
+    const sessionStatus = sessionStorage.getItem("isLoggedIn") === "true";
+    const localStatus = localStorage.getItem("isLoggedIn") === "true";
+    const loggedIn = sessionStatus || localStatus;
+    setIsUserLoggedIn(loggedIn);
 
-      const savedUserStr = sessionStorage.getItem("mockUser") || localStorage.getItem("mockUser");
-      let activeUserId = "";
-      let activeName = "";
+    // 2. ดึงจาก Cache ชั่วคราวขึ้นมาก่อน
+    const savedImage = localStorage.getItem("profileImage");
+    if (savedImage) setProfileImage(savedImage);
 
-      if (savedUserStr) {
-        try {
-          const savedUser = JSON.parse(savedUserStr);
-          if (savedUser.name) {
-            setUserName(savedUser.name);
-            activeName = savedUser.name;
-          }
-          if (savedUser.id) activeUserId = savedUser.id;
-        } catch (e) {
-          console.error("Parse user error:", e);
-        }
-      }
+    const savedUserStr = sessionStorage.getItem("mockUser") || localStorage.getItem("mockUser");
+    let activeUserId = "";
+    let activeName = "";
+    let activeUserKey = "guest";
 
-      // 3. ดึงข้อมูลจริงจาก Supabase (ดึง weight, height, bmi, avatar_url ตรงๆ)
+    if (savedUserStr) {
       try {
-        const { data: authData } = await supabase.auth.getUser();
-        if (authData?.user) activeUserId = authData.user.id;
+        const savedUser = JSON.parse(savedUserStr);
+        if (savedUser.name) {
+          setUserName(savedUser.name);
+          activeName = savedUser.name;
+        }
+        if (savedUser.id) activeUserId = savedUser.id;
+        activeUserKey = savedUser.contact || savedUser.email || savedUser.id || savedUser.name || "guest";
+      } catch (e) {
+        console.error("Parse user error:", e);
+      }
+    }
 
-        if (activeUserId || activeName) {
-          let query = supabase.from("profiles").select("*");
-          if (activeUserId) {
-            query = query.eq("id", activeUserId);
-          } else {
-            query = query.eq("full_name", activeName);
-          }
+    // 3. ตรวจสอบจำนวนวัตถุดิบในตู้เย็นของ User คนนี้
+    const userFridgeStr =
+      localStorage.getItem(`myFridgeItems_${activeUserKey}`) ||
+      localStorage.getItem("myFridgeItems") ||
+      localStorage.getItem("fridge");
 
-          const { data, error } = await query.maybeSingle();
+    if (userFridgeStr) {
+      try {
+        const parsed = JSON.parse(userFridgeStr);
+        if (Array.isArray(parsed)) {
+          setFridgeCount(parsed.length);
+        }
+      } catch {
+        setFridgeCount(0);
+      }
+    } else {
+      setFridgeCount(0);
+    }
 
-          if (data && !error) {
-            if (data.full_name) setUserName(data.full_name);
-            if (data.avatar_url) setProfileImage(data.avatar_url);
+    // 4. ดึงข้อมูลจริงจาก Supabase (ดึง weight, height, bmi, avatar_url ตรงๆ)
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      if (authData?.user) activeUserId = authData.user.id;
 
-            // ถ้ามีน้ำหนักและส่วนสูงใน Supabase ให้คำนวณและแสดงผลทันที
-            if (data.weight && data.height) {
-              const w = parseFloat(data.weight);
-              const h = parseFloat(data.height) / 100;
-              const bmiVal = parseFloat((w / (h * h)).toFixed(1));
+      if (activeUserId || activeName) {
+        let query = supabase.from("profiles").select("*");
+        if (activeUserId) {
+          query = query.eq("id", activeUserId);
+        } else {
+          query = query.eq("full_name", activeName);
+        }
 
-              setUserBMI(bmiVal.toString());
+        const { data, error } = await query.maybeSingle();
 
-              let label = "สมส่วน / สุขภาพดี";
-              if (bmiVal < 18.5) label = "น้ำหนักน้อย / ผอม";
-              else if (bmiVal >= 23.0 && bmiVal <= 24.9) label = "ท้วม / โรคอ้วนระดับ 1";
-              else if (bmiVal >= 25.0 && bmiVal <= 29.9) label = "อ้วน / โรคอ้วนระดับ 2";
-              else if (bmiVal >= 30.0) label = "อ้วนมาก / ระดับรุนแรง";
+        if (data && !error) {
+          if (data.full_name) setUserName(data.full_name);
+          if (data.avatar_url) setProfileImage(data.avatar_url);
 
-              setUserBMIStatus(label);
+          // ถ้ามีน้ำหนักและส่วนสูงใน Supabase ให้คำนวณและแสดงผลทันที
+          if (data.weight && data.height) {
+            const w = parseFloat(data.weight);
+            const h = parseFloat(data.height) / 100;
+            const bmiVal = parseFloat((w / (h * h)).toFixed(1));
 
-              // คำนวณ TDEE
-              const ageVal = data.age ? parseInt(data.age) : 25;
-              const isMale = data.gender !== "female";
-              const bmr = isMale
-                ? 10 * w + 6.25 * (h * 100) - 5 * ageVal + 5
-                : 10 * w + 6.25 * (h * 100) - 5 * ageVal - 161;
-              const tdee = Math.round(bmr * 1.55);
-              setUserTDEE(tdee.toLocaleString());
-              return;
-            }
+            setUserBMI(bmiVal.toString());
+
+            let label = "สมส่วน / สุขภาพดี";
+            if (bmiVal < 18.5) label = "น้ำหนักน้อย / ผอม";
+            else if (bmiVal >= 23.0 && bmiVal <= 24.9) label = "ท้วม / โรคอ้วนระดับ 1";
+            else if (bmiVal >= 25.0 && bmiVal <= 29.9) label = "อ้วน / โรคอ้วนระดับ 2";
+            else if (bmiVal >= 30.0) label = "อ้วนมาก / ระดับรุนแรง";
+
+            setUserBMIStatus(label);
+
+            // คำนวณ TDEE
+            const ageVal = data.age ? parseInt(data.age) : 25;
+            const isMale = data.gender !== "female";
+            const bmr = isMale
+              ? 10 * w + 6.25 * (h * 100) - 5 * ageVal + 5
+              : 10 * w + 6.25 * (h * 100) - 5 * ageVal - 161;
+            const tdee = Math.round(bmr * 1.55);
+            setUserTDEE(tdee.toLocaleString());
+            return;
           }
         }
-      } catch (err) {
-        console.error("โหลดข้อมูลจาก Supabase ผิดพลาด:", err);
       }
+    } catch (err) {
+      console.error("โหลดข้อมูลจาก Supabase ผิดพลาด:", err);
+    }
 
-      // 4. กรณีใน DB ไม่มี ให้ใช้ค่าจาก LocalStorage เป็น Fallback สำรอง
-      const savedWeight = localStorage.getItem("user_weight") || localStorage.getItem("weight");
-      const savedHeight = localStorage.getItem("user_height") || localStorage.getItem("height");
-      const savedBMI = localStorage.getItem("userBMI");
+    // 5. กรณีใน DB ไม่มี ให้ใช้ค่าจาก LocalStorage เป็น Fallback สำรอง
+    const savedWeight = localStorage.getItem("user_weight") || localStorage.getItem("weight");
+    const savedHeight = localStorage.getItem("user_height") || localStorage.getItem("height");
+    const savedBMI = localStorage.getItem("userBMI");
 
-      if (savedBMI) {
-        setUserBMI(savedBMI);
-        setUserBMIStatus(localStorage.getItem("userBMIStatus") || "สมส่วน");
-      } else if (savedWeight && savedHeight) {
-        const w = parseFloat(savedWeight);
-        const h = parseFloat(savedHeight) / 100;
-        if (w > 0 && h > 0) {
-          const bmiVal = parseFloat((w / (h * h)).toFixed(1));
-          setUserBMI(bmiVal.toString());
-          let label = "สมส่วน / สุขภาพดี";
-          if (bmiVal < 18.5) label = "น้ำหนักน้อย / ผอม";
-          else if (bmiVal >= 23.0 && bmiVal <= 24.9) label = "ท้วม / โรคอ้วนระดับ 1";
-          else if (bmiVal >= 25.0 && bmiVal <= 29.9) label = "อ้วน / โรคอ้วนระดับ 2";
-          else if (bmiVal >= 30.0) label = "อ้วนมาก / ระดับรุนแรง";
-          setUserBMIStatus(label);
-        }
+    if (savedBMI) {
+      setUserBMI(savedBMI);
+      setUserBMIStatus(localStorage.getItem("userBMIStatus") || "สมส่วน");
+    } else if (savedWeight && savedHeight) {
+      const w = parseFloat(savedWeight);
+      const h = parseFloat(savedHeight) / 100;
+      if (w > 0 && h > 0) {
+        const bmiVal = parseFloat((w / (h * h)).toFixed(1));
+        setUserBMI(bmiVal.toString());
+        let label = "สมส่วน / สุขภาพดี";
+        if (bmiVal < 18.5) label = "น้ำหนักน้อย / ผอม";
+        else if (bmiVal >= 23.0 && bmiVal <= 24.9) label = "ท้วม / โรคอ้วนระดับ 1";
+        else if (bmiVal >= 25.0 && bmiVal <= 29.9) label = "อ้วน / โรคอ้วนระดับ 2";
+        else if (bmiVal >= 30.0) label = "อ้วนมาก / ระดับรุนแรง";
+        setUserBMIStatus(label);
       }
+    }
 
-      const savedTDEE = localStorage.getItem("userTDEE");
-      if (savedTDEE) setUserTDEE(savedTDEE);
-    };
-
-    loadUserData();
-    window.addEventListener("profileUpdated", loadUserData);
-    return () => window.removeEventListener("profileUpdated", loadUserData);
+    const savedTDEE = localStorage.getItem("userTDEE");
+    if (savedTDEE) setUserTDEE(savedTDEE);
   }, []);
+
+  // 🌟 ใช้ setTimeout ครอบเพื่อป้องกัน ESLint Warning: react-hooks/set-state-in-effect
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadUserData();
+    }, 0);
+
+    window.addEventListener("profileUpdated", loadUserData);
+    window.addEventListener("fridgeUpdated", loadUserData);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("profileUpdated", loadUserData);
+      window.removeEventListener("fridgeUpdated", loadUserData);
+    };
+  }, [loadUserData]);
 
   if (!isUserLoggedIn) {
     return (
@@ -187,7 +221,7 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* บล็อก 2: ตู้เย็นของฉัน */}
+          {/* บล็อก 2: ตู้เย็นของฉัน (แสดงจำนวนจริง) */}
           <Link
             href="/my-fridge"
             className="md:col-span-4 bg-gradient-to-br from-[#f26522] to-orange-500 p-8 rounded-[2rem] shadow-md border border-orange-400 flex flex-col justify-between group relative overflow-hidden transition-all hover:shadow-lg hover:-translate-y-1"
@@ -209,7 +243,7 @@ export default function ProfilePage() {
 
             <div className="mt-6 flex items-center justify-between text-white/90">
               <span className="text-sm font-bold bg-white/20 px-3 py-1.5 rounded-full backdrop-blur-sm">
-                วัตถุดิบที่มี
+                วัตถุดิบที่มี {fridgeCount > 0 ? `(${fridgeCount} อย่าง)` : "(ว่างเปล่า)"}
               </span>
               <span className="bg-white text-[#f26522] w-8 h-8 rounded-full flex items-center justify-center font-black group-hover:scale-110 transition-transform">
                 →

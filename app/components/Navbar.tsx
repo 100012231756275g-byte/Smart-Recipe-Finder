@@ -75,7 +75,8 @@ export default function Navbar() {
                 alert("🚨 บัญชีของคุณถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ");
                 await supabase.auth.signOut();
                 sessionStorage.clear();
-                localStorage.clear();
+                localStorage.removeItem("isLoggedIn");
+                localStorage.removeItem("mockUser");
                 setIsUserLoggedIn(false);
                 setProfileImage(defaultImage);
                 window.dispatchEvent(new Event("profileUpdated"));
@@ -108,7 +109,7 @@ export default function Navbar() {
     return null;
   }
 
-  // 🧹 ฟังก์ชันออกจากระบบแบบล้างข้อมูลหมดจด
+  // 🌟 ฟังก์ชันออกจากระบบที่ปลอดภัย (ลบเฉพาะ Session ปล่อยตู้เย็นและข้อมูลสุขภาพไว้ไม่ให้หาย)
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
@@ -124,23 +125,9 @@ export default function Navbar() {
     // 2. ล้าง Cookie ของ Admin
     document.cookie = "isAdmin=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
 
-    // 3. ล้างแคชข้อมูลตู้เย็น สุขภาพ และรูปภาพทั้งหมดในเครื่อง
+    // 3. ลบเฉพาะสถานะ Auth ในเครื่อง (ห้ามลบ myFridgeItems, allergies, diseases เด็ดขาด!)
     localStorage.removeItem("isLoggedIn");
     localStorage.removeItem("mockUser");
-    localStorage.removeItem("myFridgeItems");
-    localStorage.removeItem("fridge");
-    localStorage.removeItem("nutrition_logs");
-    localStorage.removeItem("allergies");
-    localStorage.removeItem("diseases");
-    localStorage.removeItem("user_gender");
-    localStorage.removeItem("user_age");
-    localStorage.removeItem("user_weight");
-    localStorage.removeItem("user_height");
-    localStorage.removeItem("userAge");
-    localStorage.removeItem("userBMI");
-    localStorage.removeItem("userBMIStatus");
-    localStorage.removeItem("userTDEE");
-    localStorage.removeItem("userBMR");
     localStorage.removeItem("isAdmin");
     localStorage.removeItem("profileImage");
 
@@ -149,9 +136,8 @@ export default function Navbar() {
     setShowLogoutConfirm(false);
     setProfileImage(defaultImage);
 
-    // 5. ส่ง Event ไปอัปเดตทุกหน้าในระบบ
+    // 5. ส่ง Event ไปอัปเดตสถานะของหน้าเว็บ
     window.dispatchEvent(new Event("profileUpdated"));
-    window.dispatchEvent(new Event("fridgeUpdated"));
 
     router.push("/");
   };
@@ -180,29 +166,29 @@ export default function Navbar() {
                 <span className="text-white font-black text-2xl sm:text-3xl tracking-tight hidden md:block">cook cook</span>
               </Link>
 
-              {/* 🌟 4 ปุ่มหลักสำหรับ Desktop */}
+              {/* 4 ปุ่มหลักสำหรับ Desktop */}
               <div className="hidden lg:flex items-center gap-5 text-white font-bold text-sm bg-orange-600/30 px-5 py-2.5 rounded-full">
                 <button 
                   onClick={() => handleRestrictedRoute('/search')} 
-                  className={`transition-colors ${pathname === '/search' ? 'text-orange-200 underline underline-offset-4' : 'hover:text-orange-200'}`}
+                  className={`transition-colors cursor-pointer ${pathname === '/search' ? 'text-orange-200 underline underline-offset-4' : 'hover:text-orange-200'}`}
                 >
                   ค้นหาสูตร
                 </button>
                 <button 
                   onClick={() => handleRestrictedRoute('/recipe1')} 
-                  className={`transition-colors ${pathname === '/recipe1' ? 'text-orange-200 underline underline-offset-4' : 'hover:text-orange-200'}`}
+                  className={`transition-colors cursor-pointer ${pathname === '/recipe1' ? 'text-orange-200 underline underline-offset-4' : 'hover:text-orange-200'}`}
                 >
                   สุ่มเมนู
                 </button>
                 <button 
                   onClick={() => handleRestrictedRoute('/search-ingredients')} 
-                  className={`transition-colors ${pathname === '/search-ingredients' ? 'text-orange-200 underline underline-offset-4' : 'hover:text-orange-200'}`}
+                  className={`transition-colors cursor-pointer ${pathname === '/search-ingredients' ? 'text-orange-200 underline underline-offset-4' : 'hover:text-orange-200'}`}
                 >
                   วัตถุดิบ
                 </button>
                 <button 
                   onClick={() => handleRestrictedRoute('/calculate')} 
-                  className={`transition-colors ${pathname === '/calculate' ? 'text-orange-200 underline underline-offset-4' : 'hover:text-orange-200'}`}
+                  className={`transition-colors cursor-pointer ${pathname === '/calculate' ? 'text-orange-200 underline underline-offset-4' : 'hover:text-orange-200'}`}
                 >
                   คำนวณ
                 </button>
@@ -247,12 +233,12 @@ export default function Navbar() {
           </div>
         </div>
 
-        {/* 📱 4 ปุ่มหลักบนมือถือ */}
+        {/* 4 ปุ่มหลักบนมือถือ */}
         <div className="lg:hidden bg-orange-700/40 border-t border-white/10 px-2 py-1.5 shadow-inner">
           <div className="grid grid-cols-4 gap-1 text-center">
             <button
               onClick={() => handleRestrictedRoute('/search')}
-              className={`py-1.5 px-1 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+              className={`py-1.5 px-1 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
                 pathname === '/search' ? 'bg-white text-[#f26522] shadow-sm' : 'text-white hover:bg-white/10'
               }`}
             >
@@ -260,7 +246,7 @@ export default function Navbar() {
             </button>
             <button
               onClick={() => handleRestrictedRoute('/recipe1')}
-              className={`py-1.5 px-1 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+              className={`py-1.5 px-1 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
                 pathname === '/recipe1' ? 'bg-white text-[#f26522] shadow-sm' : 'text-white hover:bg-white/10'
               }`}
             >
@@ -268,7 +254,7 @@ export default function Navbar() {
             </button>
             <button
               onClick={() => handleRestrictedRoute('/search-ingredients')}
-              className={`py-1.5 px-1 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+              className={`py-1.5 px-1 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
                 pathname === '/search-ingredients' ? 'bg-white text-[#f26522] shadow-sm' : 'text-white hover:bg-white/10'
               }`}
             >
@@ -276,7 +262,7 @@ export default function Navbar() {
             </button>
             <button
               onClick={() => handleRestrictedRoute('/calculate')}
-              className={`py-1.5 px-1 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+              className={`py-1.5 px-1 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
                 pathname === '/calculate' ? 'bg-white text-[#f26522] shadow-sm' : 'text-white hover:bg-white/10'
               }`}
             >
@@ -286,7 +272,7 @@ export default function Navbar() {
         </div>
       </nav>
 
-      {/* 🚨 ป๊อปอัปแจ้งเตือนให้ Login */}
+      {/* ป๊อปอัปแจ้งเตือนให้ Login */}
       {showLoginAlert && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in p-4">
           <div className="bg-white w-full max-w-xs rounded-[2rem] shadow-2xl py-8 px-6 relative text-center flex flex-col items-center">
@@ -294,8 +280,8 @@ export default function Navbar() {
             <h3 className="text-xl text-gray-900 font-extrabold mb-2">ต้องเข้าสู่ระบบก่อน</h3>
             <p className="text-sm text-gray-500 font-medium mb-6">กรุณาเข้าสู่ระบบเพื่อใช้งานฟีเจอร์นี้อย่างเต็มรูปแบบครับ</p>
             <div className="flex gap-3 w-full">
-              <button onClick={() => setShowLoginAlert(false)} className="flex-1 py-3 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">ไว้ทีหลัง</button>
-              <button onClick={() => { setShowLoginAlert(false); router.push("/login"); }} className="flex-1 py-3 text-sm font-bold text-white bg-[#f26522] hover:bg-orange-600 rounded-xl shadow-md transition-colors">เข้าสู่ระบบ</button>
+              <button onClick={() => setShowLoginAlert(false)} className="flex-1 py-3 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer">ไว้ทีหลัง</button>
+              <button onClick={() => { setShowLoginAlert(false); router.push("/login"); }} className="flex-1 py-3 text-sm font-bold text-white bg-[#f26522] hover:bg-orange-600 rounded-xl shadow-md transition-colors cursor-pointer">เข้าสู่ระบบ</button>
             </div>
           </div>
         </div>
@@ -307,8 +293,8 @@ export default function Navbar() {
           <div className="bg-white w-full max-w-xs rounded-[2rem] shadow-2xl py-6 px-6 relative text-center">
             <p className="text-lg text-gray-800 font-bold mb-6 mt-2">ต้องการออกจากระบบ?</p>
             <div className="flex gap-3 justify-center">
-              <button onClick={() => setShowLogoutConfirm(false)} className="flex-1 py-2.5 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">ยกเลิก</button>
-              <button onClick={handleLogout} className="flex-1 py-2.5 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-xl transition-colors shadow-xs">ยืนยัน</button>
+              <button onClick={() => setShowLogoutConfirm(false)} className="flex-1 py-2.5 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer">ยกเลิก</button>
+              <button onClick={handleLogout} className="flex-1 py-2.5 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-xl transition-colors shadow-xs cursor-pointer">ยืนยัน</button>
             </div>
           </div>
         </div>

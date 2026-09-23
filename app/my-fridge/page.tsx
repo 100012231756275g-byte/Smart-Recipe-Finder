@@ -1,7 +1,7 @@
 // app/my-fridge/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 interface Ingredient {
@@ -32,6 +32,7 @@ export default function MyFridgePage() {
   const [newItemDate, setNewItemDate] = useState("");
 
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [currentUserKey, setCurrentUserKey] = useState<string>("guest");
 
   // ฟังก์ชันคำนวณวันที่ตามปฏิทินจริง (YYYY-MM-DD)
   const getFutureDateStr = (days: number) => {
@@ -43,54 +44,97 @@ export default function MyFridgePage() {
     return `${year}-${month}-${day}`;
   };
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const savedFridge = localStorage.getItem("myFridgeItems") || localStorage.getItem("fridge");
+  // 🌟 ฟังก์ชันหาตัวตนผู้ใช้ปัจจุบันเพื่อผูกตู้เย็นเฉพาะคน
+  const getActiveUserKey = useCallback(() => {
+    if (typeof window === "undefined") return "guest";
+    const savedUserStr = sessionStorage.getItem("mockUser") || localStorage.getItem("mockUser");
+    if (savedUserStr) {
+      try {
+        const u = JSON.parse(savedUserStr);
+        return u.contact || u.email || u.id || u.name || "guest";
+      } catch {
+        return "guest";
+      }
+    }
+    return "guest";
+  }, []);
 
-      if (savedFridge) {
-        try {
-          const parsedItems: Ingredient[] = JSON.parse(savedFridge);
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
+  // โหลดข้อมูลตู้เย็นตามบัญชีผู้ใช้
+  const loadUserFridge = useCallback(() => {
+    const userKey = getActiveUserKey();
+    setCurrentUserKey(userKey);
 
-          const updatedItems = parsedItems.map((item) => {
-            const dateStr = item.expiry_date || item.expiryDateText;
-            const expiry = new Date(dateStr);
-            expiry.setHours(0, 0, 0, 0);
-            const diffTime = expiry.getTime() - today.getTime();
-            const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            return {
-              ...item,
-              daysLeft,
-              expiryDateText: dateStr,
-              expiry_date: dateStr,
-            };
-          });
-          setIngredients(updatedItems);
-        } catch (e) {
-          console.error("Parse fridge items error:", e);
-          setIngredients([]);
-        }
-      } else {
+    // 1. ดึงจากคีย์เฉพาะของ User คนนั้นก่อน
+    const userFridgeKey = `myFridgeItems_${userKey}`;
+    let savedFridge = localStorage.getItem(userFridgeKey);
+
+    // 2. ถ้าไม่เจอ ให้ค้นหาจากคีย์กลางสำรอง (เผื่อเป็นข้อมูลเก่า)
+    if (!savedFridge) {
+      savedFridge = localStorage.getItem("myFridgeItems") || localStorage.getItem("fridge");
+    }
+
+    if (savedFridge) {
+      try {
+        const parsedItems: Ingredient[] = JSON.parse(savedFridge);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const updatedItems = parsedItems.map((item) => {
+          const dateStr = item.expiry_date || item.expiryDateText;
+          const expiry = new Date(dateStr);
+          expiry.setHours(0, 0, 0, 0);
+          const diffTime = expiry.getTime() - today.getTime();
+          const daysLeft = isNaN(expiry.getTime()) ? 3 : Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          return {
+            ...item,
+            daysLeft,
+            expiryDateText: dateStr,
+            expiry_date: dateStr,
+          };
+        });
+        setIngredients(updatedItems);
+      } catch (e) {
+        console.error("Parse fridge items error:", e);
         setIngredients([]);
       }
-
+    } else {
+      setIngredients([]);
+    }
+  }, [getActiveUserKey]);
+useEffect(() => {
+    const timer = setTimeout(() => {
+      loadUserFridge();
       setIsMounted(true);
     }, 0);
 
-    return () => clearTimeout(timer);
-  }, []);
+    const handleStorageChange = () => loadUserFridge();
+    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("profileUpdated", handleStorageChange);
 
-  // ซิงค์บันทึกข้อมูลทุกครั้งที่รายการวัตถุดิบเปลี่ยนแปลง
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("profileUpdated", handleStorageChange);
+    };
+  }, [loadUserFridge]);
+
+  // ซิงค์บันทึกข้อมูลทั้งในคีย์เฉพาะของ User และคีย์กลางระบบ
   useEffect(() => {
     if (isMounted) {
       const dataStr = JSON.stringify(ingredients);
+
+      // บันทึกลงตู้เย็นของ User คนนี้โดยเฉพาะ (ล็อกอินใหม่ก็ไม่หาย)
+      if (currentUserKey && currentUserKey !== "guest") {
+        localStorage.setItem(`myFridgeItems_${currentUserKey}`, dataStr);
+      }
+
+      // บันทึกลงคีย์กลางเพื่อให้หน้า Recipe และ Search นำไปใช้งานได้ทันที
       localStorage.setItem("myFridgeItems", dataStr);
       localStorage.setItem("fridge", dataStr);
       localStorage.setItem("fridgeIngredients", JSON.stringify(ingredients.map((i) => i.name.trim())));
       window.dispatchEvent(new Event("fridgeUpdated"));
     }
-  }, [ingredients, isMounted]);
+  }, [ingredients, isMounted, currentUserKey]);
 
   if (!isMounted) return <div className="min-h-screen bg-white"></div>;
 
@@ -281,7 +325,7 @@ export default function MyFridgePage() {
       <main className="max-w-3xl mx-auto mt-6 px-4">
         <button
           onClick={() => router.push("/profile")}
-          className="mb-5 flex items-center gap-2 text-gray-400 hover:text-orange-500 font-bold text-xs transition-colors group"
+          className="mb-5 flex items-center gap-2 text-gray-400 hover:text-orange-500 font-bold text-xs transition-colors group cursor-pointer"
         >
           <div className="w-7 h-7 flex items-center justify-center bg-white border border-gray-200 group-hover:border-orange-200 rounded-full transition-colors">
             ←
@@ -301,7 +345,7 @@ export default function MyFridgePage() {
           </div>
           <button
             onClick={() => setIsAddModalOpen(true)}
-            className="bg-[#12b38e] hover:bg-[#0e9b7b] text-white px-4 sm:px-5 py-2.5 rounded-2xl font-extrabold shadow-sm transition-transform active:scale-95 flex items-center gap-1.5 text-xs sm:text-sm"
+            className="bg-[#12b38e] hover:bg-[#0e9b7b] text-white px-4 sm:px-5 py-2.5 rounded-2xl font-extrabold shadow-sm transition-transform active:scale-95 flex items-center gap-1.5 text-xs sm:text-sm cursor-pointer"
           >
             <span className="text-base">+</span> เพิ่มของ
           </button>
@@ -320,7 +364,7 @@ export default function MyFridgePage() {
             </div>
             <button
               onClick={handleClearExpired}
-              className="bg-white text-red-600 hover:bg-red-50 active:scale-95 font-extrabold px-3.5 py-2 rounded-xl text-xs shadow-sm transition-all shrink-0"
+              className="bg-white text-red-600 hover:bg-red-50 active:scale-95 font-extrabold px-3.5 py-2 rounded-xl text-xs shadow-sm transition-all shrink-0 cursor-pointer"
             >
               🗑️ เคลียร์ทิ้งทั้งหมด
             </button>
@@ -341,13 +385,13 @@ export default function MyFridgePage() {
             <div className="flex gap-2 w-full md:w-auto shrink-0">
               <button
                 onClick={handleCookUrgent}
-                className="flex-1 md:flex-none bg-[#f26522] hover:bg-orange-600 text-white px-3.5 py-2 rounded-xl font-extrabold text-xs shadow-sm transition-transform active:scale-95"
+                className="flex-1 md:flex-none bg-[#f26522] hover:bg-orange-600 text-white px-3.5 py-2 rounded-xl font-extrabold text-xs shadow-sm transition-transform active:scale-95 cursor-pointer"
               >
                 🔥 ปรุงด่วน!
               </button>
               <button
                 onClick={() => handleSmartRandomMenu(true)}
-                className="flex-1 md:flex-none bg-rose-600 hover:bg-rose-700 text-white px-3.5 py-2 rounded-xl font-extrabold text-xs shadow-sm transition-transform active:scale-95"
+                className="flex-1 md:flex-none bg-rose-600 hover:bg-rose-700 text-white px-3.5 py-2 rounded-xl font-extrabold text-xs shadow-sm transition-transform active:scale-95 cursor-pointer"
               >
                 ✨ AI แนะนำ
               </button>
@@ -362,7 +406,7 @@ export default function MyFridgePage() {
           </div>
           <button
             onClick={handleGenerateMenuWithAI}
-            className="bg-emerald-400 hover:bg-emerald-300 text-emerald-950 px-5 py-2.5 rounded-2xl font-black text-xs sm:text-sm shadow-sm transition-transform active:scale-95 shrink-0"
+            className="bg-emerald-400 hover:bg-emerald-300 text-emerald-950 px-5 py-2.5 rounded-2xl font-black text-xs sm:text-sm shadow-sm transition-transform active:scale-95 shrink-0 cursor-pointer"
           >
             ✨ คิดค้นเมนู
           </button>
@@ -405,7 +449,7 @@ export default function MyFridgePage() {
                   </div>
                   <button
                     onClick={() => handleDelete(item.id)}
-                    className="w-8 h-8 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    className="w-8 h-8 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                     title="ลบวัตถุดิบ"
                   >
                     ✕
@@ -429,7 +473,7 @@ export default function MyFridgePage() {
           <div className="bg-white rounded-3xl w-full max-w-md p-6 sm:p-7 shadow-2xl relative animate-fade-in-up">
             <button
               onClick={() => setIsAddModalOpen(false)}
-              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-gray-100 hover:bg-red-100 text-gray-500 hover:text-red-500 rounded-full transition-colors font-bold text-xs"
+              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-gray-100 hover:bg-red-100 text-gray-500 hover:text-red-500 rounded-full transition-colors font-bold text-xs cursor-pointer"
             >
               ✕
             </button>
@@ -470,28 +514,28 @@ export default function MyFridgePage() {
                   <button
                     type="button"
                     onClick={() => setQuickDate(3)}
-                    className="text-[11px] font-bold bg-red-50 text-red-600 px-2.5 py-1.5 rounded-lg hover:bg-red-100 border border-red-100 transition-colors"
+                    className="text-[11px] font-bold bg-red-50 text-red-600 px-2.5 py-1.5 rounded-lg hover:bg-red-100 border border-red-100 transition-colors cursor-pointer"
                   >
                     🥩 ของสด (3 วัน)
                   </button>
                   <button
                     type="button"
                     onClick={() => setQuickDate(5)}
-                    className="text-[11px] font-bold bg-green-50 text-green-700 px-2.5 py-1.5 rounded-lg hover:bg-green-100 border border-green-100 transition-colors"
+                    className="text-[11px] font-bold bg-green-50 text-green-700 px-2.5 py-1.5 rounded-lg hover:bg-green-100 border border-green-100 transition-colors cursor-pointer"
                   >
                     🥬 ผักสด (5 วัน)
                   </button>
                   <button
                     type="button"
                     onClick={() => setQuickDate(14)}
-                    className="text-[11px] font-bold bg-amber-50 text-amber-700 px-2.5 py-1.5 rounded-lg hover:bg-amber-100 border border-amber-100 transition-colors"
+                    className="text-[11px] font-bold bg-amber-50 text-amber-700 px-2.5 py-1.5 rounded-lg hover:bg-amber-100 border border-amber-100 transition-colors cursor-pointer"
                   >
                     🥚 ไข่ไก่ (14 วัน)
                   </button>
                   <button
                     type="button"
                     onClick={() => setQuickDate(90)}
-                    className="text-[11px] font-bold bg-gray-100 text-gray-700 px-2.5 py-1.5 rounded-lg hover:bg-gray-200 border border-gray-200 transition-colors"
+                    className="text-[11px] font-bold bg-gray-100 text-gray-700 px-2.5 py-1.5 rounded-lg hover:bg-gray-200 border border-gray-200 transition-colors cursor-pointer"
                   >
                     🥫 อาหารแห้ง (3 เดือน)
                   </button>
@@ -510,13 +554,13 @@ export default function MyFridgePage() {
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs sm:text-sm transition-colors"
+                  className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs sm:text-sm transition-colors cursor-pointer"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-[#12b38e] hover:bg-[#0e9b7b] text-white font-bold rounded-xl text-xs sm:text-sm shadow-sm transition-transform active:scale-95"
+                  className="flex-1 py-2.5 bg-[#12b38e] hover:bg-[#0e9b7b] text-white font-bold rounded-xl text-xs sm:text-sm shadow-sm transition-transform active:scale-95 cursor-pointer"
                 >
                   บันทึกเข้าตู้เย็น
                 </button>
