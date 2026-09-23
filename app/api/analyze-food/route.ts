@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+// ขยายเวลา Timeout เป็น 30 วินาที ป้องกัน Serverless ตัดการทำงานระหว่างรับภาพ
+export const maxDuration = 30;
+
 export async function POST(req: Request) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
-    
-    console.log("🔑 [DEBUG] API Key ที่ระบบอ่านได้ตอนนี้คือ:", apiKey);
 
     if (!apiKey) {
-      console.error("❌ ไม่พบ API Key!");
-      return NextResponse.json({ error: 'ไม่พบ API Key' }, { status: 500 });
+      return NextResponse.json({ error: 'ไม่พบ GEMINI_API_KEY' }, { status: 500 });
     }
 
     const { imageBase64, mimeType } = await req.json();
@@ -19,16 +19,20 @@ export async function POST(req: Request) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    
-    // 🌟 เปลี่ยนมาใช้โมเดลล่าสุดตามที่ Google ร้องขอ (จุดที่แก้ปัญหาทั้งหมด)
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-    
+
+    // เปลี่ยนจาก gemini-1.5-flash ที่ถูกถอดไปแล้ว เป็นโมเดลปัจจุบัน
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-3.6-flash',
+      generationConfig: {
+        responseMimeType: 'application/json',
+      },
+    });
+
     const prompt = `
       คุณคือผู้เชี่ยวชาญด้านโภชนาการอาหารไทยและสากล จงวิเคราะห์รูปภาพอาหารนี้
-      แล้วประเมินข้อมูลโภชนาการ 1 จาน/เสิร์ฟ อย่างแม่นยำ 
+      แล้วประเมินข้อมูลโภชนาการ 1 จาน/เสิร์ฟ อย่างแม่นยำตามเกณฑ์มาตรฐานสาธารณสุข
       
-      ต้องตอบกลับมาเป็นรูปแบบ JSON เท่านั้น ห้ามมีข้อความอื่นปนเด็ดขาด (ห้ามมี markdown \`\`\`json)
-      โครงสร้าง JSON ต้องเป็นแบบนี้เป๊ะๆ:
+      ตอบกลับด้วยโครงสร้าง JSON ตามนี้เท่านั้น:
       {
         "foodName": "ชื่ออาหารภาษาไทย (สั้นๆ กระชับ)",
         "calories": ตัวเลขแคลอรี่รวม (number),
@@ -50,14 +54,18 @@ export async function POST(req: Request) {
 
     const result = await model.generateContent([prompt, ...imageParts]);
     const responseText = result.response.text();
-
-    const cleanJsonString = responseText.replace(/```json\n?|```/g, '').trim();
-    const nutritionData = JSON.parse(cleanJsonString);
+    const nutritionData = JSON.parse(responseText.trim());
 
     return NextResponse.json(nutritionData);
 
   } catch (error) {
     console.error('❌ Gemini API Error:', error);
-    return NextResponse.json({ error: 'เกิดข้อผิดพลาดในการวิเคราะห์รูปภาพจากฝั่ง AI' }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: 'เกิดข้อผิดพลาดในการวิเคราะห์รูปภาพจากฝั่ง AI',
+        details: (error as Error)?.message || 'Unknown error',
+      },
+      { status: 500 }
+    );
   }
 }

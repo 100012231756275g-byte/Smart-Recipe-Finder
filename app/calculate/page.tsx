@@ -135,8 +135,46 @@ const nutritionDB: Record<string, { cal: number; protein: number; fat: number; c
   "นมสดจืด": { cal: 60, protein: 3.2, fat: 3.5, carb: 4.8, unit: "กรัม", baseAmount: 100, category: "เครื่องปรุง & ไขมัน" },
   "ผงชูรส": { cal: 0, protein: 0, fat: 0, carb: 0, unit: "ช้อนชา", baseAmount: 1, category: "เครื่องปรุง & ไขมัน" }
 };
+
+// 🌟 ฟังก์ชันบีบอัดภาพฝั่งเบราว์เซอร์: ป้องกันเพดาน 4.5 MB ของ Vercel
+const compressImage = (file: File): Promise<{ base64: string; mimeType: string }> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 1024;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.75);
+        resolve({
+          base64: compressedDataUrl.split(",")[1],
+          mimeType: "image/jpeg",
+        });
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
+
 export default function CalculatePage() {
-  const [activeMode, setActiveMode] = useState<"ai" | "manual">("manual");
+  const [activeMode, setActiveMode] = useState<"ai" | "manual">("ai");
 
   // ================= State: ดึงเมนูจาก Supabase =================
   const [supabaseRecipes, setSupabaseRecipes] = useState<DbRecipe[]>([]);
@@ -149,7 +187,7 @@ export default function CalculatePage() {
   
   const [originalResult, setOriginalResult] = useState<NutritionResult | null>(null);
   const [editableResult, setEditableResult] = useState<NutritionResult | null>(null);
-  
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [isDragging, setIsDragging] = useState(false);
   const [manualSearchQuery, setManualSearchQuery] = useState("");
   const [isSearchingManual, setIsSearchingManual] = useState(false);
@@ -158,6 +196,8 @@ export default function CalculatePage() {
   const [newIngredientWeight, setNewIngredientWeight] = useState<number | "">("");
   const [isRecalculating, setIsRecalculating] = useState(false);
 
+  // Input refs
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ================= State: Manual Calculator =================
@@ -188,7 +228,6 @@ export default function CalculatePage() {
     fetchRecipes();
   }, []);
 
-  // 🌟 ฟังก์ชันเลือกเมนูจาก Supabase แล้วดึงวัตถุดิบทั้งหมดมาใส่ในหม้อทันที
   const handleSelectSupabaseRecipe = (recipeName: string) => {
     if (!recipeName) return;
     const selected = supabaseRecipes.find(r => r.name === recipeName);
@@ -197,7 +236,6 @@ export default function CalculatePage() {
     setCustomDishName(selected.name);
 
     const generatedItems: ManualIngredientItem[] = selected.ingredients.map((ingName) => {
-      // ค้นหาฐานข้อมูลโภชนาการที่ใกล้เคียงที่สุด
       const matchedKey = Object.keys(nutritionDB).find(k => ingName.includes(k) || k.includes(ingName));
       const info = matchedKey ? nutritionDB[matchedKey] : null;
 
@@ -213,7 +251,6 @@ export default function CalculatePage() {
           carb: info.carb / info.baseAmount
         };
       } else {
-        // วัตถุดิบทั่วไป (ค่าเฉลี่ยโภชนาการ)
         return {
           name: ingName,
           amount: 30,
@@ -229,7 +266,6 @@ export default function CalculatePage() {
     setManualIngList(generatedItems);
   };
 
-  // คำนวณผลรวมโภชนาการสำหรับโหมดกรอกเอง
   const manualTotalCal = Math.round(manualIngList.reduce((sum, item) => sum + (item.calPerUnit * item.amount), 0));
   const manualTotalProtein = Math.round(manualIngList.reduce((sum, item) => sum + (item.protein * item.amount), 0));
   const manualTotalFat = Math.round(manualIngList.reduce((sum, item) => sum + (item.fat * item.amount), 0));
@@ -263,29 +299,23 @@ export default function CalculatePage() {
     setEditableResult(null);
 
     try {
-      const base64Data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(imageFile);
-        reader.onload = () => {
-          if (typeof reader.result === 'string') resolve(reader.result.split(',')[1]);
-          else reject("Format Error");
-        };
-        reader.onerror = error => reject(error);
-      });
+      const { base64: base64Data, mimeType } = await compressImage(imageFile);
 
       const response = await fetch('/api/analyze-food', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: base64Data, mimeType: imageFile.type }),
+        body: JSON.stringify({ imageBase64: base64Data, mimeType }),
       });
 
-      if (!response.ok) throw new Error("API ประมวลผลล้มเหลว");
+      const responseData = await response.json();
 
-      const rawData = await response.json();
+      if (!response.ok) {
+        throw new Error(responseData.details || responseData.error || `Server Error (${response.status})`);
+      }
       
       const data: NutritionResult = {
-        ...rawData,
-        ingredients: (rawData.ingredients || []).map((ing: string) => ({
+        ...responseData,
+        ingredients: (responseData.ingredients || []).map((ing: string) => ({
           name: ing,
           weight: 100 
         }))
@@ -294,9 +324,9 @@ export default function CalculatePage() {
       setOriginalResult(JSON.parse(JSON.stringify(data)));
       setEditableResult(JSON.parse(JSON.stringify(data))); 
 
-    } catch (error) {
-      console.error(error);
-      alert("เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI กรุณาลองใหม่อีกครั้ง");
+    } catch (error: unknown) {
+      console.error("AI Analysis Error:", error);
+      alert(`❌ เกิดข้อผิดพลาด: ${(error as Error)?.message || "ไม่สามารถเชื่อมต่อกับ AI ได้"}`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -380,8 +410,10 @@ export default function CalculatePage() {
   const handleSaveToDiary = () => {
     if (!editableResult || !originalResult) return;
     const saveMethod = editableResult.calories !== originalResult.calories ? 'manual_edit' : 'ai_vision';
+    
     // eslint-disable-next-line react-hooks/purity
     const currentId = Date.now().toString();
+   
     const currentTime = new Date().toISOString();
 
     const newLogEntry = {
@@ -420,6 +452,8 @@ export default function CalculatePage() {
     setOriginalResult(null);
     setEditableResult(null);
     setManualSearchQuery("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
   };
 
   // ---------------- Logic: Manual Calculator ----------------
@@ -458,6 +492,7 @@ export default function CalculatePage() {
 
    
     const currentId = Date.now().toString();
+   
     const currentTime = new Date().toISOString();
 
     const newLogEntry = {
@@ -547,16 +582,61 @@ export default function CalculatePage() {
         {activeMode === "ai" && (
           <>
             {!previewUrl ? (
-              <div 
-                onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop} onClick={() => fileInputRef.current?.click()}
-                className={`bg-white w-full rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center p-12 text-center cursor-pointer transition-all duration-300 min-h-[350px] shadow-sm
-                  ${isDragging ? "border-[#f26522] bg-orange-50 scale-[1.02]" : "border-gray-200 hover:border-[#f26522] hover:bg-gray-50"}
-                `}
-              >
-                <input type="file" ref={fileInputRef} onChange={(e) => e.target.files && handleFileChange(e.target.files[0])} accept="image/*" className="hidden" capture="environment" />
-                <div className="w-20 h-20 bg-orange-100 text-[#f26522] rounded-full flex items-center justify-center text-3xl mb-4 shadow-inner">📸</div>
-                <h3 className="text-2xl font-bold text-gray-800 mb-2">แตะเพื่อถ่ายรูป หรือ ลากไฟล์มาวาง</h3>
-                <p className="text-gray-400 font-medium max-w-sm">รองรับไฟล์ JPG, PNG หรือเปิดกล้องถ่ายสดๆ เพื่อให้ AI ช่วยดูได้เลย</p>
+              <div className="w-full bg-white rounded-[2.5rem] border-2 border-dashed border-gray-200 p-8 text-center shadow-sm">
+                
+                {/* ช่องอัปโหลดแบบถ่ายสด (เปิดกล้องทันที 100%) */}
+                <input 
+                  id="direct-camera-input"
+                  type="file" 
+                  accept="image/*" 
+                  capture="environment"
+                  ref={cameraInputRef} 
+                  onChange={(e) => e.target.files && e.target.files[0] && handleFileChange(e.target.files[0])} 
+                  className="hidden" 
+                />
+
+                {/* ช่องอัปโหลดแบบเลือกรูปจากคลังภาพ */}
+                <input 
+                  id="gallery-file-input"
+                  type="file" 
+                  accept="image/*" 
+                  ref={fileInputRef} 
+                  onChange={(e) => e.target.files && e.target.files[0] && handleFileChange(e.target.files[0])} 
+                  className="hidden" 
+                />
+
+                <div 
+                  onDragOver={onDragOver} 
+                  onDragLeave={onDragLeave} 
+                  onDrop={onDrop}
+                  className="flex flex-col items-center justify-center mb-6"
+                >
+                  <div className="w-20 h-20 bg-orange-100 text-[#f26522] rounded-full flex items-center justify-center text-3xl mb-4 shadow-inner">
+                    📸
+                  </div>
+                  <h3 className="text-2xl font-bold text-gray-800 mb-2">อัปโหลดรูปภาพอาหาร</h3>
+                  <p className="text-gray-400 font-medium max-w-sm">
+                    ถ่ายรูปสดๆ จากมือถือ หรือเลือกรูปจากอัลบั้ม เพื่อให้ AI วิเคราะห์สารอาหาร
+                  </p>
+                </div>
+
+                {/* ปุ่มเลือก 2 แบบ: ถ่ายรูปสด vs เลือกจากอัลบั้ม */}
+                <div className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
+                  <label 
+                    htmlFor="direct-camera-input"
+                    className="flex-1 bg-[#f26522] hover:bg-orange-600 text-white font-bold py-4 px-6 rounded-2xl shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <span>📷</span> ถ่ายรูปสด (เปิดกล้อง)
+                  </label>
+
+                  <label 
+                    htmlFor="gallery-file-input"
+                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-4 px-6 rounded-2xl transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <span>🖼️</span> เลือกจากอัลบั้ม
+                  </label>
+                </div>
+
               </div>
             ) : (
               <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row gap-8">
@@ -658,8 +738,8 @@ export default function CalculatePage() {
                           <input 
                             type="number" 
                             value={newIngredientWeight} 
-                            onChange={(e) => setNewIngredientWeight(e.target.value ? Number(e.target.value) : "")}
-                            onKeyPress={(e) => e.key === 'Enter' && addIngredient()}
+                            onChange={(e) => setNewIngredientWeight(e.target.value ? Number(e.target.value) : "")} 
+                            onKeyPress={(e) => e.key === 'Enter' && addIngredient()} 
                             placeholder="กรัม (g)" 
                             className="w-1/4 bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#f26522] text-center"
                           />
@@ -724,12 +804,12 @@ export default function CalculatePage() {
                 defaultValue=""
                 className="w-full bg-white border border-orange-200 rounded-xl px-4 py-2.5 text-sm font-bold text-gray-700 focus:outline-none focus:border-[#f26522] shadow-sm cursor-pointer"
               >
-               <option value="" disabled>
-                 {isLoadingRecipes ? "กำลังโหลดรายชื่อเมนู..." : "-- คลิกเพื่อเลือกเมนูอาหาร --"}
-               </option>
-                 {supabaseRecipes.map((r, idx) => (
-               <option key={idx} value={r.name}>
-                🍳 {r.name} {r.kcal ? `(${r.kcal})` : ''}
+                <option value="" disabled>
+                  {isLoadingRecipes ? "กำลังโหลดรายชื่อเมนู..." : "-- คลิกเพื่อเลือกเมนูอาหาร --"}
+                </option>
+                  {supabaseRecipes.map((r, idx) => (
+                <option key={idx} value={r.name}>
+                  🍳 {r.name} {r.kcal ? `(${r.kcal})` : ''}
                 </option>
               ))}
                </select>
