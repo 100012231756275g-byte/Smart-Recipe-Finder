@@ -246,14 +246,13 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
     setCustomDishName(selected.name);
 
     const generatedItems: ManualIngredientItem[] = selected.ingredients.map((ingName) => {
-      // ใช้ findMatchedNutrition ในการค้นหาวัตถุดิบและคำพ้อง (เช่น หมูชิ้น -> เนื้อหมูสันนอก)
       const info = findMatchedNutrition(ingName);
 
       if (info) {
         let displayAmount = info.defaultPortionGrams;
         let displayUnit = "กรัม";
 
-        // ปรับหน่วยแสดงผลสำหรับไข่หรือเครื่องปรุง
+        // กำหนดหน่วยเริ่มต้นสำหรับไข่และเครื่องปรุง
         if (info.category === "egg") {
           displayUnit = "ฟอง";
           displayAmount = 1;
@@ -262,29 +261,39 @@ const handleSelectSupabaseRecipe = (recipeName: string) => {
           displayAmount = 1;
         }
 
-        const gramWeight = info.conversions[displayUnit] || displayAmount;
-        const factor = gramWeight / 100;
+        // หาน้ำหนักกรัมต่อ 1 หน่วยที่เลือก (เช่น 1 กรัม = 1g, 1 ฟอง = 50g, 1 ช้อนโต๊ะ = 14g)
+        const unitGram = info.conversions[displayUnit] || 1;
+
+        // คำนวณสารอาหารต่อ 1 หน่วยที่แท้จริง (ไม่ต้องหาร displayAmount ซ้ำ)
+        const calPerOneUnit = (info.calPer100g / 100) * unitGram;
+        const proteinPerOneUnit = (info.proteinPer100g / 100) * unitGram;
+        const fatPerOneUnit = (info.fatPer100g / 100) * unitGram;
+        const carbPerOneUnit = (info.carbPer100g / 100) * unitGram;
 
         return {
           name: ingName,
           amount: displayAmount,
           unit: displayUnit,
-          calPerUnit: (info.calPer100g * factor) / displayAmount,
-          protein: (info.proteinPer100g * factor) / displayAmount,
-          fat: (info.fatPer100g * factor) / displayAmount,
-          carb: (info.carbPer100g * factor) / displayAmount,
+          calPerUnit: calPerOneUnit,
+          protein: proteinPerOneUnit,
+          fat: fatPerOneUnit,
+          carb: carbPerOneUnit,
         };
       }
 
-      // ค่าสำรองกรณีหาไม่พบ
+      // วัตถุดิบสมุนไพร/เครื่องต้มยำที่ให้พลังงานต่ำมาก (ข่า, ตะไคร้, ใบมะกรูด)
+      const isAromatic = ["ข่า", "ตะไคร้", "ใบมะกรูด", "พริก", "ผักชี"].some(k => ingName.includes(k));
+      const defaultWeight = isAromatic ? 15 : 50;
+      const fallbackCalPerGram = isAromatic ? 0.2 : 0.8; // สมุนไพรต้มยำแทบไม่มีแคลอรี่
+
       return {
         name: ingName,
-        amount: 50,
+        amount: defaultWeight,
         unit: "กรัม",
-        calPerUnit: 1.2,
-        protein: 0.05,
-        fat: 0.03,
-        carb: 0.15,
+        calPerUnit: fallbackCalPerGram,
+        protein: 0.02,
+        fat: 0.01,
+        carb: 0.05,
       };
     });
 
