@@ -5,6 +5,13 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
+
+// 🌟 เชื่อมต่อ Supabase
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -22,26 +29,88 @@ export default function ProfilePage() {
   const [userTDEE, setUserTDEE] = useState<string | null>(null);
 
   useEffect(() => {
-    const loadUserData = () => {
-      const status = sessionStorage.getItem("isLoggedIn");
-      setIsUserLoggedIn(status === "true");
+    const loadUserData = async () => {
+      // 1. ตรวจสอบสถานะล็อกอิน
+      const sessionStatus = sessionStorage.getItem("isLoggedIn") === "true";
+      const localStatus = localStorage.getItem("isLoggedIn") === "true";
+      const loggedIn = sessionStatus || localStatus;
+      setIsUserLoggedIn(loggedIn);
 
+      // 2. ดึงจาก Cache ชั่วคราวขึ้นมาก่อน
       const savedImage = localStorage.getItem("profileImage");
       if (savedImage) setProfileImage(savedImage);
 
-      const savedUserStr = sessionStorage.getItem("mockUser");
+      const savedUserStr = sessionStorage.getItem("mockUser") || localStorage.getItem("mockUser");
+      let activeUserId = "";
+      let activeName = "";
+
       if (savedUserStr) {
         try {
           const savedUser = JSON.parse(savedUserStr);
-          if (savedUser.name) setUserName(savedUser.name);
+          if (savedUser.name) {
+            setUserName(savedUser.name);
+            activeName = savedUser.name;
+          }
+          if (savedUser.id) activeUserId = savedUser.id;
         } catch (e) {
           console.error("Parse user error:", e);
         }
       }
 
-      // 🌟 ดึงข้อมูลและคำนวณ BMI อัตโนมัติจาก user_weight และ user_height
-      const savedWeight = localStorage.getItem("user_weight");
-      const savedHeight = localStorage.getItem("user_height");
+      // 3. ดึงข้อมูลจริงจาก Supabase (ดึง weight, height, bmi, avatar_url ตรงๆ)
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user) activeUserId = authData.user.id;
+
+        if (activeUserId || activeName) {
+          let query = supabase.from("profiles").select("*");
+          if (activeUserId) {
+            query = query.eq("id", activeUserId);
+          } else {
+            query = query.eq("full_name", activeName);
+          }
+
+          const { data, error } = await query.maybeSingle();
+
+          if (data && !error) {
+            if (data.full_name) setUserName(data.full_name);
+            if (data.avatar_url) setProfileImage(data.avatar_url);
+
+            // ถ้ามีน้ำหนักและส่วนสูงใน Supabase ให้คำนวณและแสดงผลทันที
+            if (data.weight && data.height) {
+              const w = parseFloat(data.weight);
+              const h = parseFloat(data.height) / 100;
+              const bmiVal = parseFloat((w / (h * h)).toFixed(1));
+
+              setUserBMI(bmiVal.toString());
+
+              let label = "สมส่วน / สุขภาพดี";
+              if (bmiVal < 18.5) label = "น้ำหนักน้อย / ผอม";
+              else if (bmiVal >= 23.0 && bmiVal <= 24.9) label = "ท้วม / โรคอ้วนระดับ 1";
+              else if (bmiVal >= 25.0 && bmiVal <= 29.9) label = "อ้วน / โรคอ้วนระดับ 2";
+              else if (bmiVal >= 30.0) label = "อ้วนมาก / ระดับรุนแรง";
+
+              setUserBMIStatus(label);
+
+              // คำนวณ TDEE
+              const ageVal = data.age ? parseInt(data.age) : 25;
+              const isMale = data.gender !== "female";
+              const bmr = isMale
+                ? 10 * w + 6.25 * (h * 100) - 5 * ageVal + 5
+                : 10 * w + 6.25 * (h * 100) - 5 * ageVal - 161;
+              const tdee = Math.round(bmr * 1.55);
+              setUserTDEE(tdee.toLocaleString());
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        console.error("โหลดข้อมูลจาก Supabase ผิดพลาด:", err);
+      }
+
+      // 4. กรณีใน DB ไม่มี ให้ใช้ค่าจาก LocalStorage เป็น Fallback สำรอง
+      const savedWeight = localStorage.getItem("user_weight") || localStorage.getItem("weight");
+      const savedHeight = localStorage.getItem("user_height") || localStorage.getItem("height");
       const savedBMI = localStorage.getItem("userBMI");
 
       if (savedBMI) {
@@ -50,29 +119,20 @@ export default function ProfilePage() {
       } else if (savedWeight && savedHeight) {
         const w = parseFloat(savedWeight);
         const h = parseFloat(savedHeight) / 100;
-
         if (w > 0 && h > 0) {
           const bmiVal = parseFloat((w / (h * h)).toFixed(1));
           setUserBMI(bmiVal.toString());
-
           let label = "สมส่วน / สุขภาพดี";
           if (bmiVal < 18.5) label = "น้ำหนักน้อย / ผอม";
           else if (bmiVal >= 23.0 && bmiVal <= 24.9) label = "ท้วม / โรคอ้วนระดับ 1";
           else if (bmiVal >= 25.0 && bmiVal <= 29.9) label = "อ้วน / โรคอ้วนระดับ 2";
           else if (bmiVal >= 30.0) label = "อ้วนมาก / ระดับรุนแรง";
-
           setUserBMIStatus(label);
-        } else {
-          setUserBMI(null);
-          setUserBMIStatus(null);
         }
-      } else {
-        setUserBMI(null);
-        setUserBMIStatus(null);
       }
 
       const savedTDEE = localStorage.getItem("userTDEE");
-      setUserTDEE(savedTDEE || null);
+      if (savedTDEE) setUserTDEE(savedTDEE);
     };
 
     loadUserData();
@@ -119,13 +179,13 @@ export default function ProfilePage() {
               <div className="flex flex-wrap gap-2.5 justify-center sm:justify-start">
                 <button
                   onClick={() => router.push("/edit-profile")}
-                  className="bg-gray-900 hover:bg-gray-800 text-white font-bold py-2.5 px-5 rounded-xl transition-all shadow-xs active:scale-95 text-xs sm:text-sm"
+                  className="bg-gray-900 hover:bg-gray-800 text-white font-bold py-2.5 px-5 rounded-xl transition-all shadow-xs active:scale-95 text-xs sm:text-sm cursor-pointer"
                 >
                   แก้ไขบัญชี ✏️
                 </button>
                 <button
                   onClick={() => router.push("/health-profile")}
-                  className="bg-orange-50 hover:bg-orange-100 text-[#f26522] border border-orange-200 font-bold py-2.5 px-5 rounded-xl transition-all shadow-xs active:scale-95 text-xs sm:text-sm"
+                  className="bg-orange-50 hover:bg-orange-100 text-[#f26522] border border-orange-200 font-bold py-2.5 px-5 rounded-xl transition-all shadow-xs active:scale-95 text-xs sm:text-sm cursor-pointer"
                 >
                   ข้อมูลสุขภาพ & โรค 📇
                 </button>
@@ -200,7 +260,7 @@ export default function ProfilePage() {
               </div>
               {userBMI && (
                 <button
-                  onClick={() => router.push("/health-profile")}
+                  onClick={() => router.push("/edit-profile")}
                   className="text-xs text-orange-400 hover:text-orange-300 transition-colors underline cursor-pointer"
                 >
                   อัปเดตสัดส่วน
@@ -242,7 +302,7 @@ export default function ProfilePage() {
                   ยังไม่ได้บันทึกสัดส่วนร่างกาย เพื่อให้ระบบคำนวณสารอาหารและแคลอรี่ที่เหมาะสม
                 </p>
                 <button
-                  onClick={() => router.push("/health-profile")}
+                  onClick={() => router.push("/edit-profile")}
                   className="w-full bg-[#f26522] hover:bg-orange-600 active:scale-95 text-white font-bold py-3 px-4 rounded-xl transition-all text-sm shadow-md shadow-orange-500/20 cursor-pointer"
                 >
                   บันทึกสัดส่วน & ดูค่า BMI

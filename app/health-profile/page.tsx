@@ -3,6 +3,13 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { createClient } from "@supabase/supabase-js";
+
+// 🌟 เชื่อมต่อ Supabase
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 // 🌟 ย้ายรายชื่อโรคมาตรฐาน สธ. ไว้นอก Component
 const NCD_LIST = [
@@ -17,6 +24,7 @@ const NCD_LIST = [
 
 export default function HealthProfilePage() {
   const [isMounted, setIsMounted] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
   // 🌟 State ข้อมูลสัดส่วนร่างกาย
   const [gender, setGender] = useState<"male" | "female" | "">("");
@@ -35,8 +43,8 @@ export default function HealthProfilePage() {
   const [newAllergy, setNewAllergy] = useState("");
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      // 🌟 ดักอ่านคีย์ทุกรูปแบบจากหน้าอื่น (ทั้ง userAge, age, user_age ฯลฯ)
+    const loadUserData = async () => {
+      // 1. อ่านข้อมูลเบื้องต้นจาก LocalStorage ขึ้นมาก่อนเพื่อความเร็ว
       const rawGender =
         localStorage.getItem("user_gender") ||
         localStorage.getItem("userGender") ||
@@ -82,10 +90,65 @@ export default function HealthProfilePage() {
         setDiseases(savedDiseases.split(",").map((d) => d.trim()).filter(Boolean));
       }
 
-      setIsMounted(true);
-    }, 0);
+      // 2. ดึงข้อมูลจริงจาก Supabase Database อย่างถาวร
+      try {
+        let activeUserId = "";
+        let activeUserName = "";
 
-    return () => clearTimeout(timer);
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user) {
+          activeUserId = authData.user.id;
+          setUserId(authData.user.id);
+        }
+
+        if (!activeUserId) {
+          const savedUserStr = sessionStorage.getItem("mockUser") || localStorage.getItem("mockUser");
+          if (savedUserStr) {
+            const parsed = JSON.parse(savedUserStr);
+            if (parsed.id) {
+              activeUserId = parsed.id;
+              setUserId(parsed.id);
+            }
+            if (parsed.name) activeUserName = parsed.name;
+          }
+        }
+
+        if (activeUserId || activeUserName) {
+          let query = supabase.from("profiles").select("*");
+          if (activeUserId) query = query.eq("id", activeUserId);
+          else query = query.eq("full_name", activeUserName);
+
+          const { data, error } = await query.maybeSingle();
+
+          if (data && !error) {
+            if (data.gender) {
+              setGender(data.gender === "female" ? "female" : "male");
+            }
+            if (data.age) setAge(data.age.toString());
+            if (data.weight) setWeight(data.weight.toString());
+            if (data.height) setHeight(data.height.toString());
+
+            if (data.health_issues) {
+              const rawIssues = data.health_issues.split(",").map((s: string) => s.trim()).filter(Boolean);
+              const isDisease = (issue: string) =>
+                NCD_LIST.some((d) => d.includes(issue) || issue.includes(d)) ||
+                ["เบาหวาน", "ความดันโลหิตสูง", "โรคหัวใจ", "โรคไต", "โรคเกาต์", "ไขมันในเลือดสูง"].some((d) => d.includes(issue) || issue.includes(d));
+
+              setDiseases(rawIssues.filter(isDisease));
+              setAllergies(rawIssues.filter((i: string) => !isDisease(i)));
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Supabase fetch in health-profile failed:", err);
+      } finally {
+        setIsMounted(true);
+      }
+    };
+
+    loadUserData();
+    window.addEventListener("profileUpdated", loadUserData);
+    return () => window.removeEventListener("profileUpdated", loadUserData);
   }, []);
 
   // ฟังก์ชันคำนวณดัชนีมวลกาย (BMI)
@@ -138,10 +201,76 @@ export default function HealthProfilePage() {
     setDiseases(diseases.filter((d) => d !== item));
   };
 
-  const handleSave = () => {
+  // 🌟 บันทึกข้อมูลทั้งลง LocalStorage และ Supabase ถาวร
+  const handleSave = async () => {
     setIsSaving(true);
     try {
-      // 🌟 บันทึกให้ครบทุกชื่อคีย์ ทั้งแบบ Snake Case และ Camel Case
+      const numWeight = weight ? parseFloat(weight) : null;
+      const numHeight = height ? parseFloat(height) : null;
+      const numAge = age ? parseInt(age) : null;
+
+      // 1. คำนวณ BMI และ TDEE
+      let calculatedBmi: number | null = null;
+      let calculatedTdee: number | null = null;
+      let calculatedBmr: number | null = null;
+
+      if (numWeight && numHeight && numHeight > 0) {
+        const hMeter = numHeight / 100;
+        calculatedBmi = parseFloat((numWeight / (hMeter * hMeter)).toFixed(1));
+
+        if (numAge && numAge > 0) {
+          const isMale = gender !== "female";
+          calculatedBmr = isMale
+            ? Math.round(10 * numWeight + 6.25 * numHeight - 5 * numAge + 5)
+            : Math.round(10 * numWeight + 6.25 * numHeight - 5 * numAge - 161);
+          calculatedTdee = Math.round(calculatedBmr * 1.55);
+        }
+      }
+
+      // 2. ส่งข้อมูลบันทึกลง Supabase Database
+      const combinedIssues = [...diseases, ...allergies].filter(Boolean);
+      const healthIssuesPayload = combinedIssues.length > 0 ? combinedIssues.join(", ") : null;
+
+      let activeUserId = userId;
+      let activeUserName = "";
+
+      if (!activeUserId) {
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user) activeUserId = authData.user.id;
+      }
+
+      if (!activeUserId) {
+        const savedUserStr = sessionStorage.getItem("mockUser") || localStorage.getItem("mockUser");
+        if (savedUserStr) {
+          try {
+            const parsed = JSON.parse(savedUserStr);
+            if (parsed.id) activeUserId = parsed.id;
+            if (parsed.name) activeUserName = parsed.name;
+          } catch (e) {
+            console.error(e);
+          }
+        }
+      }
+
+      if (activeUserId || activeUserName) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const updateData: Record<string, any> = {
+          gender: gender || null,
+          age: numAge,
+          weight: numWeight,
+          height: numHeight,
+          bmi: calculatedBmi,
+          health_issues: healthIssuesPayload,
+        };
+
+        if (activeUserId) {
+          await supabase.from("profiles").update(updateData).eq("id", activeUserId);
+        } else {
+          await supabase.from("profiles").update(updateData).eq("full_name", activeUserName);
+        }
+      }
+
+      // 3. บันทึกสำรองลง LocalStorage ครบทุกคีย์
       if (gender) {
         localStorage.setItem("user_gender", gender);
         localStorage.setItem("userGender", gender);
@@ -153,9 +282,9 @@ export default function HealthProfilePage() {
       }
 
       if (age) {
-        localStorage.setItem("user_age", age);
-        localStorage.setItem("userAge", age);
-        localStorage.setItem("age", age);
+        localStorage.setItem("user_age", age.trim());
+        localStorage.setItem("userAge", age.trim());
+        localStorage.setItem("age", age.trim());
       } else {
         localStorage.removeItem("user_age");
         localStorage.removeItem("userAge");
@@ -163,9 +292,9 @@ export default function HealthProfilePage() {
       }
 
       if (weight) {
-        localStorage.setItem("user_weight", weight);
-        localStorage.setItem("userWeight", weight);
-        localStorage.setItem("weight", weight);
+        localStorage.setItem("user_weight", weight.trim());
+        localStorage.setItem("userWeight", weight.trim());
+        localStorage.setItem("weight", weight.trim());
       } else {
         localStorage.removeItem("user_weight");
         localStorage.removeItem("userWeight");
@@ -173,9 +302,9 @@ export default function HealthProfilePage() {
       }
 
       if (height) {
-        localStorage.setItem("user_height", height);
-        localStorage.setItem("userHeight", height);
-        localStorage.setItem("height", height);
+        localStorage.setItem("user_height", height.trim());
+        localStorage.setItem("userHeight", height.trim());
+        localStorage.setItem("height", height.trim());
       } else {
         localStorage.removeItem("user_height");
         localStorage.removeItem("userHeight");
@@ -186,24 +315,35 @@ export default function HealthProfilePage() {
         const allergyStr = allergies.join(",");
         localStorage.setItem("allergies", allergyStr);
         localStorage.setItem("user_allergies", allergyStr);
+        localStorage.setItem("userAllergies", allergyStr);
       } else {
         localStorage.removeItem("allergies");
         localStorage.removeItem("user_allergies");
+        localStorage.removeItem("userAllergies");
       }
 
       if (diseases.length > 0) {
         const diseaseStr = diseases.join(",");
         localStorage.setItem("diseases", diseaseStr);
         localStorage.setItem("user_diseases", diseaseStr);
+        localStorage.setItem("userDiseases", diseaseStr);
       } else {
         localStorage.removeItem("diseases");
         localStorage.removeItem("user_diseases");
+        localStorage.removeItem("userDiseases");
       }
 
-      // 🌟 อัปเดตค่า BMI ไปยัง localStorage ให้หน้าอื่นใช้ได้ทันที
       if (bmiInfo) {
         localStorage.setItem("userBMI", bmiInfo.value.toString());
+        localStorage.setItem("bmi", bmiInfo.value.toString());
         localStorage.setItem("userBMIStatus", bmiInfo.label);
+      }
+
+      if (calculatedTdee) {
+        localStorage.setItem("userTDEE", calculatedTdee.toString());
+      }
+      if (calculatedBmr) {
+        localStorage.setItem("userBMR", calculatedBmr.toString());
       }
 
       // แจ้งเตือนการเปลี่ยนแปลงข้อมูลไปยังทุกหน้า
@@ -211,9 +351,9 @@ export default function HealthProfilePage() {
 
       setIsEditing(false);
       alert("บันทึกข้อมูลสุขภาพและสัดส่วนร่างกายเรียบร้อยแล้ว! 💚");
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Save Error:", error);
-      alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+      alert((error as Error)?.message || "เกิดข้อผิดพลาดในการบันทึกข้อมูล");
     } finally {
       setIsSaving(false);
     }
