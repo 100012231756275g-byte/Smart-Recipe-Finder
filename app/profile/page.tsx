@@ -183,12 +183,6 @@ export default function ProfilePage() {
                 >
                   แก้ไขบัญชี ✏️
                 </button>
-                <button
-                  onClick={() => router.push("/health-profile")}
-                  className="bg-orange-50 hover:bg-orange-100 text-[#f26522] border border-orange-200 font-bold py-2.5 px-5 rounded-xl transition-all shadow-xs active:scale-95 text-xs sm:text-sm cursor-pointer"
-                >
-                  ข้อมูลสุขภาพ & โรค 📇
-                </button>
               </div>
             </div>
           </div>
