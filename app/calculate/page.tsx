@@ -58,6 +58,7 @@ const nutritionDB: Record<
   "เนื้อเป็ด": { cal: 201, protein: 23, fat: 11, carb: 0, unit: "กรัม", baseAmount: 100, category: "เนื้อสัตว์ & โปรตีน" },
   "ตับหมู / ตับไก่": { cal: 135, protein: 21, fat: 4, carb: 3, unit: "กรัม", baseAmount: 100, category: "เนื้อสัตว์ & โปรตีน" },
   "กุ้งขาว / กุ้งสด": { cal: 99, protein: 24, fat: 0.3, carb: 0.2, unit: "กรัม", baseAmount: 100, category: "อาหารทะเล" },
+  "กุ้ง": { cal: 99, protein: 24, fat: 0.3, carb: 0.2, unit: "กรัม", baseAmount: 100, category: "อาหารทะเล" },
   "กุ้งแห้ง": { cal: 253, protein: 60, fat: 1.5, carb: 0, unit: "กรัม", baseAmount: 100, category: "อาหารทะเล" },
   "ปลาหมึกสด": { cal: 92, protein: 15.6, fat: 1.4, carb: 3.1, unit: "กรัม", baseAmount: 100, category: "อาหารทะเล" },
   "ปลาหมึกกรอบ": { cal: 110, protein: 18, fat: 2, carb: 4, unit: "กรัม", baseAmount: 100, category: "อาหารทะเล" },
@@ -106,11 +107,14 @@ const nutritionDB: Record<
   "ชะอม": { cal: 57, protein: 4.8, fat: 0.8, carb: 8, unit: "กรัม", baseAmount: 100, category: "ผัก & สมุนไพร" },
   "กระเทียม": { cal: 15, protein: 0.6, fat: 0.1, carb: 3.3, unit: "กรัม", baseAmount: 10, category: "ผัก & สมุนไพร" },
   "พริกขี้หนู": { cal: 8, protein: 0.4, fat: 0.1, carb: 1.8, unit: "กรัม", baseAmount: 10, category: "ผัก & สมุนไพร" },
+  "พริก": { cal: 8, protein: 0.4, fat: 0.1, carb: 1.8, unit: "กรัม", baseAmount: 10, category: "ผัก & สมุนไพร" },
   "มะนาว": { cal: 10, protein: 0.3, fat: 0.1, carb: 3, unit: "ลูก", baseAmount: 1, category: "ผัก & สมุนไพร" },
   "หอมแดง": { cal: 12, protein: 0.3, fat: 0, carb: 2.7, unit: "กรัม", baseAmount: 15, category: "ผัก & สมุนไพร" },
   "หอมใหญ่": { cal: 40, protein: 1.1, fat: 0.1, carb: 9.3, unit: "กรัม", baseAmount: 100, category: "ผัก & สมุนไพร" },
   "ตะไคร้": { cal: 10, protein: 0.2, fat: 0, carb: 2.5, unit: "กรัม", baseAmount: 20, category: "ผัก & สมุนไพร" },
   "ข่า / ขิง": { cal: 15, protein: 0.3, fat: 0.1, carb: 3.5, unit: "กรัม", baseAmount: 20, category: "ผัก & สมุนไพร" },
+  "ข่า": { cal: 15, protein: 0.3, fat: 0.1, carb: 3.5, unit: "กรัม", baseAmount: 20, category: "ผัก & สมุนไพร" },
+  "ใบมะกรูด": { cal: 5, protein: 0.2, fat: 0.05, carb: 1.0, unit: "กรัม", baseAmount: 15, category: "ผัก & สมุนไพร" },
   "ต้นหอม / ผักชี": { cal: 5, protein: 0.3, fat: 0.1, carb: 1, unit: "กรัม", baseAmount: 10, category: "ผัก & สมุนไพร" },
   "ถั่วลิสง": { cal: 160, protein: 7, fat: 14, carb: 5, unit: "กรัม", baseAmount: 30, category: "ผัก & สมุนไพร" },
   "น้ำมันพืช": { cal: 120, protein: 0, fat: 14, carb: 0, unit: "ช้อนโต๊ะ", baseAmount: 1, category: "เครื่องปรุง & ไขมัน" },
@@ -127,6 +131,9 @@ const nutritionDB: Record<
   "พริกแกงเผ็ด / แกงเขียวหวาน": { cal: 30, protein: 1, fat: 1, carb: 4.5, unit: "ช้อนโต๊ะ", baseAmount: 1, category: "เครื่องปรุง & ไขมัน" },
   "กะทิ": { cal: 230, protein: 2.3, fat: 24, carb: 5.5, unit: "กรัม", baseAmount: 100, category: "เครื่องปรุง & ไขมัน" },
   "นมสดจืด": { cal: 60, protein: 3.2, fat: 3.5, carb: 4.8, unit: "กรัม", baseAmount: 100, category: "เครื่องปรุง & ไขมัน" },
+  // 🌟 เพิ่มคีย์นมข้นจืดและน้ำพริกเผาตามค่าจริงของต้มยำกุ้ง
+  "นมข้นจืด": { cal: 135, protein: 7.0, fat: 8.0, carb: 10.0, unit: "กรัม", baseAmount: 100, category: "ไข่ & นม & แปรรูป" },
+  "น้ำพริกเผา": { cal: 400, protein: 4.0, fat: 30.0, carb: 35.0, unit: "กรัม", baseAmount: 100, category: "เครื่องปรุง & ไขมัน" },
   "ผงชูรส": { cal: 0, protein: 0, fat: 0, carb: 0, unit: "ช้อนชา", baseAmount: 1, category: "เครื่องปรุง & ไขมัน" }
 };
 
@@ -136,7 +143,9 @@ const matchNutritionInfo = (name: string) => {
   const exactKey = Object.keys(nutritionDB).find((k) => k.toLowerCase() === cleanName);
   if (exactKey) return nutritionDB[exactKey];
 
-  const matchedKey = Object.keys(nutritionDB).find(
+  // ค้นหาคำที่ยาวกว่าก่อนเพื่อป้องกันการจับคู่คำสั้น (เช่น จับ "น้ำพริกเผา" ก่อน "พริก")
+  const sortedKeys = Object.keys(nutritionDB).sort((a, b) => b.length - a.length);
+  const matchedKey = sortedKeys.find(
     (k) => cleanName.includes(k.toLowerCase()) || k.toLowerCase().includes(cleanName)
   );
   return matchedKey ? nutritionDB[matchedKey] : null;
@@ -248,8 +257,36 @@ export default function CalculatePage() {
     setCustomDishName(selected.name);
 
     const generatedItems: ManualIngredientItem[] = selected.ingredients.map((ingName) => {
-      const info = findMatchedNutrition(ingName);
+      // 1. ตรวจสอบใน nutritionDB ของหน้านี้ก่อนเพื่อความแม่นยำของน้ำพริกเผาและนมข้นจืด
+      const matchedDb = matchNutritionInfo(ingName);
+      if (matchedDb) {
+        let displayAmount = matchedDb.baseAmount;
+        const displayUnit = matchedDb.unit;
 
+        if (ingName.includes("กุ้ง")) displayAmount = 80;
+        else if (ingName.includes("นมข้นจืด")) displayAmount = 50;
+        else if (ingName.includes("น้ำพริกเผา")) displayAmount = 10;
+        else if (ingName.includes("พริก") && !ingName.includes("น้ำพริก")) displayAmount = 10;
+        else if (ingName.includes("ข่า") || ingName.includes("ตะไคร้") || ingName.includes("ใบมะกรูด")) displayAmount = 15;
+
+        const calPerOneUnit = matchedDb.cal / matchedDb.baseAmount;
+        const proteinPerOneUnit = matchedDb.protein / matchedDb.baseAmount;
+        const fatPerOneUnit = matchedDb.fat / matchedDb.baseAmount;
+        const carbPerOneUnit = matchedDb.carb / matchedDb.baseAmount;
+
+        return {
+          name: ingName,
+          amount: displayAmount,
+          unit: displayUnit,
+          calPerUnit: calPerOneUnit,
+          protein: proteinPerOneUnit,
+          fat: fatPerOneUnit,
+          carb: carbPerOneUnit,
+        };
+      }
+
+      // 2. ตรวจสอบใน nutritionMasterDB
+      const info = findMatchedNutrition(ingName);
       if (info) {
         let displayAmount = info.defaultPortionGrams;
         let displayUnit = "กรัม";
@@ -279,7 +316,11 @@ export default function CalculatePage() {
         };
       }
 
-      const isAromatic = ["ข่า", "ตะไคร้", "ใบมะกรูด", "พริก", "ผักชี"].some((k) => ingName.includes(k));
+      // 3. ป้องกันการเหมารวมน้ำพริกเผาเป็นสมุนไพร
+      const isAromatic =
+        !ingName.includes("น้ำพริก") &&
+        ["ข่า", "ตะไคร้", "ใบมะกรูด", "พริก", "ผักชี"].some((k) => ingName.includes(k));
+
       const defaultWeight = isAromatic ? 15 : 50;
       const fallbackCalPerGram = isAromatic ? 0.2 : 0.8;
 
@@ -413,12 +454,13 @@ export default function CalculatePage() {
       let totalFat = 0;
 
       const ingredientsList: IngredientItem[] = (foundRecipe.ingredients || []).map((ingName) => {
-        const matchedKey = Object.keys(nutritionDB).find((k) => ingName.includes(k) || k.includes(ingName));
-        const info = matchedKey ? nutritionDB[matchedKey] : null;
+        const info = matchNutritionInfo(ingName);
 
         let defaultWeight = 50;
         if (ingName.includes("ข้าว")) defaultWeight = 150;
         else if (ingName.includes("หมู") || ingName.includes("ไก่") || ingName.includes("เนื้อ") || ingName.includes("กุ้ง")) defaultWeight = 80;
+        else if (ingName.includes("นมข้นจืด")) defaultWeight = 50;
+        else if (ingName.includes("น้ำพริกเผา")) defaultWeight = 10;
         else if (info && (info.unit === "ช้อนโต๊ะ" || info.unit === "ฟอง" || info.unit === "ลูก")) defaultWeight = 15;
 
         if (info) {
@@ -794,7 +836,7 @@ export default function CalculatePage() {
                   </p>
                 </div>
 
-                {/* 🌟 ปุ่มกดที่สั่งเปิดกล้องระดับ Hardware ได้ตรงจุด */}
+                {/* 🌟 ปุ่มกดสั่งเปิดกล้องระดับ Hardware */}
                 <div className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
                   <button
                     type="button"
