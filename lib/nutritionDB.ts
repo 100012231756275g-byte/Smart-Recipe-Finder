@@ -282,6 +282,59 @@ export const nutritionMasterDB: Record<string, NutritionMasterItem> = {
       "ทัพพี": 35,
     }
   },
+  // 🥥 กะทิ (ตัวสำคัญที่ทำให้ไขมันและแคลอรี่หาย)
+  "กะทิ": {
+    canonicalName: "กะทิ",
+    aliases: ["น้ำกะทิ", "หัวกะทิ", "หางกะทิ"],
+    calPer100g: 230,
+    proteinPer100g: 2.3,
+    fatPer100g: 24,
+    carbPer100g: 5.5,
+    category: "fat",
+    defaultPortionGrams: 60,
+    conversions: {
+      "กรัม": 1,
+      "มล.": 1,
+      "ช้อนโต๊ะ": 15,
+      "ทัพพี": 50,
+      "ถ้วย": 150,
+    }
+  },
+
+  // 🍄 เห็ด
+  "เห็ด": {
+    canonicalName: "เห็ด",
+    aliases: ["เห็ดฟาง", "เห็ดนางฟ้า", "เห็ดชิเมจิ", "เห็ดออรินจิ"],
+    calPer100g: 32,
+    proteinPer100g: 3.5,
+    fatPer100g: 0.4,
+    carbPer100g: 4.5,
+    category: "veg",
+    defaultPortionGrams: 50,
+    conversions: {
+      "กรัม": 1,
+      "ดอก (กลาง)": 15,
+      "ทัพพี": 40,
+    }
+  },
+
+  // 🍋 น้ำมะนาว
+  "มะนาว": {
+    canonicalName: "มะนาว",
+    aliases: ["น้ำมะนาว"],
+    calPer100g: 25,
+    proteinPer100g: 0.4,
+    fatPer100g: 0.1,
+    carbPer100g: 8,
+    category: "seasoning",
+    defaultPortionGrams: 15, // 1 จานใช้น้ำมะนาวประมาณ 1 ช้อนโต๊ะ (15g)
+    conversions: {
+      "กรัม": 1,
+      "ลูก": 25,
+      "ช้อนโต๊ะ": 15,
+      "ช้อนชา": 5,
+    }
+  },
   "กระเทียม": {
     canonicalName: "กระเทียม",
     aliases: ["กระเทียมสับ", "กระเทียมไทย"],
