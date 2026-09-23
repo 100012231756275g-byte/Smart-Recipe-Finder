@@ -12,7 +12,6 @@ const supabase = createClient(
 );
 
 // 🌟 ย้ายค่าคงที่ออกนอก Component
-const DIET_OPTIONS = ["ทั่วไป", "มังสวิรัติ", "เจ", "คีโต (Keto)", "ฮาลาล (Halal)"];
 const DISEASE_OPTIONS = ["เบาหวาน", "ความดันโลหิตสูง", "โรคหัวใจ", "โรคไต", "โรคเกาต์", "ไขมันในเลือดสูง"];
 const ALLERGY_OPTIONS = ["กุ้ง", "ปลาหมึก", "ปู", "หอย", "ปลา", "ถั่วลิสง", "นมวัว", "แป้งสาลี", "ไข่", "ถั่วเหลือง"];
 
@@ -40,7 +39,7 @@ export default function EditProfilePage() {
   const [height, setHeight] = useState<string>("");
   const [gender, setGender] = useState<string>("male");
 
-  // ข้อมูลการทานอาหาร
+  // ข้อมูลการทานอาหาร (คงค่าเริ่มต้นไว้เพื่อความเข้ากันได้ของระบบ)
   const [diet, setDiet] = useState<string>("ทั่วไป");
 
   // ข้อมูลสุขภาพ (อาการแพ้ & โรคประจำตัว)
@@ -51,42 +50,69 @@ export default function EditProfilePage() {
   const [newDisease, setNewDisease] = useState("");
 
   // ==========================================
-  // 🌟 โหลดข้อมูลจาก Supabase และ Storage
+  // 🌟 โหลดข้อมูลจาก Supabase Auth และ Database จริง
   // ==========================================
   useEffect(() => {
     const loadUserData = async () => {
-      let userNameFromSession = "";
+      let activeUserId = "";
+      let activeUserName = "";
 
-      // 1. อ่านข้อมูลผู้ใช้จาก Session
-      const savedUserStr = sessionStorage.getItem("mockUser");
-      if (savedUserStr) {
-        try {
-          const savedUser = JSON.parse(savedUserStr);
-          if (savedUser.name) {
-            setName(savedUser.name);
-            setCurrentUsername(savedUser.name);
-            userNameFromSession = savedUser.name;
+      // 1. ดึง User จาก Supabase Auth จริงเป็นลำดับแรก (อยู่รอดแม้รีเฟรชหรือ Login ใหม่)
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user) {
+          activeUserId = authData.user.id;
+          setUserId(authData.user.id);
+        }
+      } catch (err) {
+        console.warn("Auth check error:", err);
+      }
+
+      // 2. ถ้าไม่มี Supabase Auth ให้ดึงจาก mockUser
+      if (!activeUserId) {
+        const savedUserStr = sessionStorage.getItem("mockUser") || localStorage.getItem("mockUser");
+        if (savedUserStr) {
+          try {
+            const savedUser = JSON.parse(savedUserStr);
+            if (savedUser.name) {
+              setName(savedUser.name);
+              setCurrentUsername(savedUser.name);
+              activeUserName = savedUser.name;
+            }
+            if (savedUser.id) {
+              activeUserId = savedUser.id;
+              setUserId(savedUser.id);
+            }
+          } catch (e) {
+            console.error("Parse user error:", e);
           }
-          if (savedUser.id) setUserId(savedUser.id);
-        } catch (e) {
-          console.error("Parse user error:", e);
         }
       }
 
-      // 2. ดึงข้อมูลล่าสุดจาก Supabase
-      if (userNameFromSession) {
+      // 3. ดึงข้อมูลครบทุกฟิลด์จากตาราง profiles (รวม weight, height, gender)
+      if (activeUserId || activeUserName) {
         try {
-          const { data, error } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("full_name", userNameFromSession)
-            .maybeSingle();
+          let query = supabase.from("profiles").select("*");
+          if (activeUserId) {
+            query = query.eq("id", activeUserId);
+          } else {
+            query = query.eq("full_name", activeUserName);
+          }
+
+          const { data, error } = await query.maybeSingle();
 
           if (data && !error) {
             if (data.id) setUserId(data.id);
-            if (data.age) setAge(data.age.toString());
-            // ดึง avatar_url จาก Database ถ้ามี
+            if (data.full_name) {
+              setName(data.full_name);
+              setCurrentUsername(data.full_name);
+            }
             if (data.avatar_url) setProfileImage(data.avatar_url);
+            if (data.age) setAge(data.age.toString());
+            // ✅ ดึงค่าน้ำหนัก ส่วนสูง เพศ จาก Database เข้า State
+            if (data.weight) setWeight(data.weight.toString());
+            if (data.height) setHeight(data.height.toString());
+            if (data.gender) setGender(data.gender);
 
             if (data.health_issues) {
               const rawIssues = data.health_issues.split(",").map((s: string) => s.trim()).filter(Boolean);
@@ -99,40 +125,18 @@ export default function EditProfilePage() {
         }
       }
 
-      // 3. ดึงค่าจาก LocalStorage เสริม
-      const savedGender =
-        localStorage.getItem("user_gender") ||
-        localStorage.getItem("userGender") ||
-        localStorage.getItem("gender");
-      if (savedGender) setGender(savedGender);
-
-      const savedAge =
-        localStorage.getItem("user_age") ||
-        localStorage.getItem("userAge") ||
-        localStorage.getItem("age");
-      if (savedAge) setAge(savedAge);
-
-      const savedWeight =
-        localStorage.getItem("user_weight") ||
-        localStorage.getItem("userWeight") ||
-        localStorage.getItem("weight");
-      if (savedWeight) setWeight(savedWeight);
-
-      const savedHeight =
-        localStorage.getItem("user_height") ||
-        localStorage.getItem("userHeight") ||
-        localStorage.getItem("height");
-      if (savedHeight) setHeight(savedHeight);
+      // 4. ค่า Fallback จาก LocalStorage (กรณีฐานข้อมูลยังว่าง)
+      setGender((prev) => prev || localStorage.getItem("user_gender") || "male");
+      setAge((prev) => prev || localStorage.getItem("user_age") || "");
+      setWeight((prev) => prev || localStorage.getItem("user_weight") || "");
+      setHeight((prev) => prev || localStorage.getItem("user_height") || "");
 
       const savedDiet = localStorage.getItem("dietaryPreference");
       if (savedDiet) setDiet(savedDiet);
-
-      const savedImg = localStorage.getItem("profileImage");
-      if (savedImg && !profileImage) setProfileImage(savedImg);
     };
 
     loadUserData();
-  }, []);
+  }, []); // ✅ แก้ไข Bug ตรงนี้: ใส่ [] ป้องกันการ Re-render ไม่รู้จบ
 
   // ==========================================
   // 🌟 ฟังก์ชันคำนวณ BMI และ แคลอรี่
@@ -201,7 +205,7 @@ export default function EditProfilePage() {
   const removeDisease = (target: string) => { setDiseases(diseases.filter(d => d !== target)); };
 
   // ==========================================
-  // 🌟 ฟังก์ชัน SAVE (อัปโหลดรูป + บันทึกลงตาราง)
+  // 🌟 ฟังก์ชัน SAVE (ส่งค่าเข้า Supabase ครบทุกคอลัมน์)
   // ==========================================
   const handleSave = async () => {
     setIsSaving(true);
@@ -235,123 +239,85 @@ export default function EditProfilePage() {
         finalImageUrl = urlData.publicUrl;
       }
 
-      // 2. บันทึกข้อมูลพร้อม avatar_url ลงตาราง profiles
+      // 2. บันทึกข้อมูลพร้อม weight, height, gender ลงตาราง profiles
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const updateData: Record<string, any> = {
         full_name: trimmedName,
         avatar_url: finalImageUrl,
         age: age && parseInt(age) > 0 ? parseInt(age) : null,
+        weight: weight && parseFloat(weight) > 0 ? parseFloat(weight) : null, // ✅ เพิ่ม weight
+        height: height && parseFloat(height) > 0 ? parseFloat(height) : null, // ✅ เพิ่ม height
+        gender: gender || "male",                                             // ✅ เพิ่ม gender
         bmi: bmi > 0 ? bmi : null,
         health_issues: healthIssuesPayload,
       };
 
+      // 3. ตรวจสอบ Error จาก Supabase Database เพื่อป้องกันบันทึกล้มเหลวแบบเงียบ
+      let updateError = null;
       if (userId) {
-        await supabase.from("profiles").update(updateData).eq("id", userId);
+        const { error } = await supabase.from("profiles").update(updateData).eq("id", userId);
+        updateError = error;
       } else {
         const queryName = currentUsername || trimmedName;
-        await supabase.from("profiles").update(updateData).eq("full_name", queryName);
+        const { error } = await supabase.from("profiles").update(updateData).eq("full_name", queryName);
+        updateError = error;
       }
 
-      // 3. ซิงค์เข้า Supabase Auth Session (ป้องกัน Navbar หน้าอื่นมองไม่เห็น)
+      if (updateError) {
+        console.error("Supabase Database Update Error:", updateError);
+        throw new Error(`บันทึกลงฐานข้อมูลล้มเหลว: ${updateError.message}`);
+      }
+
+      // 4. ซิงค์เข้า Supabase Auth Session (ป้องกัน Navbar หน้าอื่นมองไม่เห็น)
       try {
         await supabase.auth.updateUser({
-          data: { avatar_url: finalImageUrl }
+          data: { avatar_url: finalImageUrl, full_name: trimmedName }
         });
       } catch (authErr) {
         console.warn("Auth sync skipped:", authErr);
       }
 
-      // 4. บันทึกลง Client Cache (sessionStorage & localStorage)
-      const savedUserStr = sessionStorage.getItem("mockUser");
-      if (savedUserStr) {
-        try {
-          const savedUser = JSON.parse(savedUserStr);
-          savedUser.name = trimmedName;
-          savedUser.avatar_url = finalImageUrl;
-          sessionStorage.setItem("mockUser", JSON.stringify(savedUser));
-        } catch (e) {
-          console.error("Set mockUser error:", e);
-        }
-      }
-
+      // 5. บันทึกลง Client Cache (sessionStorage & localStorage)
+      const userObj = { name: trimmedName, avatar_url: finalImageUrl, id: userId };
+      sessionStorage.setItem("mockUser", JSON.stringify(userObj));
+      localStorage.setItem("mockUser", JSON.stringify(userObj));
       localStorage.setItem("profileImage", finalImageUrl);
       localStorage.setItem("dietaryPreference", diet);
       
-      // บันทึกค่าร่างกายลง LocalStorage
       localStorage.setItem("user_gender", gender);
-      localStorage.setItem("userGender", gender);
-      localStorage.setItem("gender", gender);
-
-      if (age && age.trim()) {
-        localStorage.setItem("user_age", age.trim());
-        localStorage.setItem("userAge", age.trim());
-        localStorage.setItem("age", age.trim());
-      } else {
-        localStorage.removeItem("user_age");
-        localStorage.removeItem("userAge");
-        localStorage.removeItem("age");
-      }
-
-      if (weight && weight.trim()) {
-        localStorage.setItem("user_weight", weight.trim());
-        localStorage.setItem("userWeight", weight.trim());
-        localStorage.setItem("weight", weight.trim());
-      } else {
-        localStorage.removeItem("user_weight");
-        localStorage.removeItem("userWeight");
-        localStorage.removeItem("weight");
-      }
-
-      if (height && height.trim()) {
-        localStorage.setItem("user_height", height.trim());
-        localStorage.setItem("userHeight", height.trim());
-        localStorage.setItem("height", height.trim());
-      } else {
-        localStorage.removeItem("user_height");
-        localStorage.removeItem("userHeight");
-        localStorage.removeItem("height");
-      }
+      if (age) localStorage.setItem("user_age", age.trim());
+      if (weight) localStorage.setItem("user_weight", weight.trim());
+      if (height) localStorage.setItem("user_height", height.trim());
 
       if (allergies.length > 0) {
-        const allergyStr = allergies.join(",");
-        localStorage.setItem("allergies", allergyStr);
-        localStorage.setItem("user_allergies", allergyStr);
+        localStorage.setItem("allergies", allergies.join(","));
       } else {
         localStorage.removeItem("allergies");
-        localStorage.removeItem("user_allergies");
       }
 
       if (diseases.length > 0) {
-        const diseaseStr = diseases.join(",");
-        localStorage.setItem("diseases", diseaseStr);
-        localStorage.setItem("user_diseases", diseaseStr);
+        localStorage.setItem("diseases", diseases.join(","));
       } else {
         localStorage.removeItem("diseases");
-        localStorage.removeItem("user_diseases");
       }
 
       if (bmi > 0) {
         localStorage.setItem("userBMI", bmi.toString());
         localStorage.setItem("userBMIStatus", bmiStatus.text);
-      } else {
-        localStorage.removeItem("userBMI");
-        localStorage.removeItem("userBMIStatus");
       }
 
       if (metabolicData) {
         localStorage.setItem("userBMR", metabolicData.bmr.toString());
         localStorage.setItem("userTDEE", metabolicData.tdee.toString());
-      } else {
-        localStorage.removeItem("userBMR");
-        localStorage.removeItem("userTDEE");
       }
 
       // แจ้งเตือน Component อื่นๆ
       window.dispatchEvent(new Event("profileUpdated"));
       alert("บันทึกข้อมูลเรียบร้อยแล้ว! ✨");
       router.push("/health-profile");
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("บันทึกข้อมูลล้มเหลว:", error);
-      alert("เกิดข้อผิดพลาดในการเชื่อมต่อ Supabase");
+      alert((error as Error)?.message || "เกิดข้อผิดพลาดในการเชื่อมต่อ Supabase");
     } finally {
       setIsSaving(false);
     }
@@ -445,31 +411,6 @@ export default function EditProfilePage() {
                     )}
                   </div>
                 )}
-              </div>
-            </section>
-
-            <hr className="border-gray-100" />
-
-            <section>
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-1.5 h-6 bg-[#f26522] rounded-full"></div>
-                <h2 className="text-lg font-bold text-gray-800">รูปแบบการทานอาหาร</h2>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                {DIET_OPTIONS.map((option, index) => (
-                  <button 
-                    key={index}
-                    type="button"
-                    onClick={() => setDiet(option)}
-                    className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all border ${
-                      diet === option 
-                        ? "bg-[#f26522] text-white border-[#f26522] shadow-md transform scale-105" 
-                        : "bg-white text-gray-500 border-gray-200 hover:border-[#f26522] hover:text-[#f26522]"
-                    }`}
-                  >
-                    {option}
-                  </button>
-                ))}
               </div>
             </section>
 
