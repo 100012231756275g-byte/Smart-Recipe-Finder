@@ -17,11 +17,14 @@ interface NutritionResult {
   ingredients: IngredientItem[];
 }
 
+// --- โครงสร้างข้อมูลสำหรับ Recipe จาก Supabase ---
 interface DbRecipe {
   id?: number | string;
   name: string;
   kcal?: string;
   ingredients?: string[];
+  image?: string;       // เพิ่มบรรทัดนี้
+  image_url?: string;   // เพิ่มบรรทัดนี้
 }
 
 interface ManualIngredientItem {
@@ -428,7 +431,9 @@ export default function CalculatePage() {
 
       setOriginalResult(JSON.parse(JSON.stringify(realData)));
       setEditableResult(JSON.parse(JSON.stringify(realData)));
-      setPreviewUrl("https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=800&auto=format&fit=crop");
+     // ดึงรูปจริงจากฐานข้อมูล Supabase
+      const recipeImage = foundRecipe.image || foundRecipe.image_url;
+      setPreviewUrl(recipeImage || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=800&auto=format&fit=crop");
     } else {
       // 2. ถ้าไม่เจอในเมนู ให้ค้นในฐานข้อมูลวัตถุดิบเดี่ยวๆ
       const matchedKey = Object.keys(nutritionDB).find(k => 
