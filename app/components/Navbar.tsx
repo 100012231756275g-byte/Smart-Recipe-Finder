@@ -27,44 +27,74 @@ export default function Navbar() {
 
   useEffect(() => {
     const loadUserData = async () => {
-      const status = sessionStorage.getItem("isLoggedIn");
-      setIsUserLoggedIn(status === "true");
-      
-      const savedImage = localStorage.getItem("profileImage");
-      if (savedImage) setProfileImage(savedImage);
-      else setProfileImage(defaultImage);
+      // 1. ตรวจสอบสถานะการล็อกอิน
+      const sessionStatus = sessionStorage.getItem("isLoggedIn") === "true";
+      const localStatus = localStorage.getItem("isLoggedIn") === "true";
+      const loggedIn = sessionStatus || localStatus;
+      setIsUserLoggedIn(loggedIn);
 
-      // 🚨 ตรวจสอบสถานะบัญชีจาก Supabase
-      if (status === "true") {
-        const mockUserRaw = sessionStorage.getItem("mockUser");
-        if (mockUserRaw) {
-          try {
-            const mockUser = JSON.parse(mockUserRaw);
+      // 2. ดึงรูปจากแคชขึ้นมาก่อนเพื่อความเร็ว
+      const cachedImage = localStorage.getItem("profileImage");
+      if (cachedImage) {
+        setProfileImage(cachedImage);
+      }
 
-            if (mockUser.contact !== "admin") {
-              const { data, error } = await supabase
-                .from("profiles")
-                .select("status")
-                .eq("full_name", mockUser.name)
-                .single();
+      // 3. ตรวจสอบข้อมูลผู้ใช้และดึง avatar_url ล่าสุดจาก Supabase
+      if (loggedIn) {
+        try {
+          let activeUserId = "";
+          let activeName = "";
 
-              if (!error && data && data.status === "banned") {
+          // ตรวจสอบจาก Supabase Auth
+          const { data: authData } = await supabase.auth.getUser();
+          if (authData?.user) {
+            activeUserId = authData.user.id;
+          }
+
+          // ตรวจสอบจาก MockUser ในเครื่องเสริม
+          const mockUserRaw = sessionStorage.getItem("mockUser") || localStorage.getItem("mockUser");
+          if (mockUserRaw) {
+            const parsed = JSON.parse(mockUserRaw);
+            if (!activeUserId && parsed.id) activeUserId = parsed.id;
+            if (parsed.name) activeName = parsed.name;
+          }
+
+          if (activeUserId || activeName) {
+            let query = supabase.from("profiles").select("status, avatar_url");
+            if (activeUserId) {
+              query = query.eq("id", activeUserId);
+            } else {
+              query = query.eq("full_name", activeName);
+            }
+
+            const { data, error } = await query.maybeSingle();
+
+            if (!error && data) {
+              // ตรวจสอบการถูกแบน
+              if (data.status === "banned") {
                 alert("🚨 บัญชีของคุณถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ");
-                
                 await supabase.auth.signOut();
                 sessionStorage.clear();
                 localStorage.clear();
                 setIsUserLoggedIn(false);
-                
+                setProfileImage(defaultImage);
                 window.dispatchEvent(new Event("profileUpdated"));
-                window.dispatchEvent(new Event("fridgeUpdated"));
                 router.push("/login");
+                return;
+              }
+
+              // ✅ ดึงรูปภาพจริงจาก Supabase มาอัปเดตและบันทึกลงแคช
+              if (data.avatar_url) {
+                setProfileImage(data.avatar_url);
+                localStorage.setItem("profileImage", data.avatar_url);
               }
             }
-          } catch (err) {
-            console.error("ระบบตรวจสอบสถานะผิดพลาด:", err);
           }
+        } catch (err) {
+          console.error("ระบบตรวจสอบผู้ใช้ผิดพลาด:", err);
         }
+      } else {
+        setProfileImage(defaultImage);
       }
     };
 
@@ -78,7 +108,7 @@ export default function Navbar() {
     return null;
   }
 
-  // 🧹 ฟังก์ชันออกจากระบบแบบล้างข้อมูลหมดจด 100%
+  // 🧹 ฟังก์ชันออกจากระบบแบบล้างข้อมูลหมดจด
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
@@ -94,7 +124,9 @@ export default function Navbar() {
     // 2. ล้าง Cookie ของ Admin
     document.cookie = "isAdmin=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
 
-    // 3. ล้างแคชข้อมูลตู้เย็น สุขภาพ และประวัติทั้งหมดในเครื่อง
+    // 3. ล้างแคชข้อมูลตู้เย็น สุขภาพ และรูปภาพทั้งหมดในเครื่อง
+    localStorage.removeItem("isLoggedIn");
+    localStorage.removeItem("mockUser");
     localStorage.removeItem("myFridgeItems");
     localStorage.removeItem("fridge");
     localStorage.removeItem("nutrition_logs");
@@ -179,7 +211,6 @@ export default function Navbar() {
 
             {/* ฝั่งขวา: ช่องค้นหา + โปรไฟล์ / ปุ่ม Login */}
             <div className="flex items-center gap-2 sm:gap-4 w-full justify-end max-w-2xl">
-              
               <div className="hidden sm:block w-full max-w-md z-[60]">
                 <SearchBar />
               </div>
