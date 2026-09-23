@@ -1,12 +1,11 @@
-// app/calculate/page.tsx
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
-// --- โครงสร้างข้อมูลสำหรับ AI Vision Scanner ---
+// --- Types ---
 interface IngredientItem {
   name: string;
-  weight: number; 
+  weight: number;
 }
 
 interface NutritionResult {
@@ -15,10 +14,9 @@ interface NutritionResult {
   protein: number;
   carbs: number;
   fat: number;
-  ingredients: IngredientItem[]; 
+  ingredients: IngredientItem[];
 }
 
-// --- โครงสร้างข้อมูลสำหรับ Recipe จาก Supabase ---
 interface DbRecipe {
   id?: number | string;
   name: string;
@@ -26,7 +24,6 @@ interface DbRecipe {
   ingredients?: string[];
 }
 
-// --- โครงสร้างข้อมูลและฐานข้อมูลสำหรับ Manual Ingredient Calculator ---
 interface ManualIngredientItem {
   name: string;
   amount: number;
@@ -37,8 +34,11 @@ interface ManualIngredientItem {
   carb: number;
 }
 
-// 📚 ฐานข้อมูลโภชนาการวัตถุดิบอาหารไทย
-const nutritionDB: Record<string, { cal: number; protein: number; fat: number; carb: number; unit: string; baseAmount: number; category: string }> = {
+// 📚 ฐานข้อมูลโภชนาการวัตถุดิบอาหารไทย (จัดโครงสร้างให้อ้างอิง Macro ต่อน้ำหนัก 1 หน่วยจริง)
+const nutritionDB: Record<
+  string,
+  { cal: number; protein: number; fat: number; carb: number; unit: string; baseAmount: number; category: string }
+> = {
   "อกไก่": { cal: 165, protein: 31, fat: 3.6, carb: 0, unit: "กรัม", baseAmount: 100, category: "เนื้อสัตว์ & โปรตีน" },
   "สะโพกไก่": { cal: 209, protein: 24, fat: 12, carb: 0, unit: "กรัม", baseAmount: 100, category: "เนื้อสัตว์ & โปรตีน" },
   "น่องไก่": { cal: 172, protein: 28, fat: 6, carb: 0, unit: "กรัม", baseAmount: 100, category: "เนื้อสัตว์ & โปรตีน" },
@@ -125,7 +125,19 @@ const nutritionDB: Record<string, { cal: number; protein: number; fat: number; c
   "ผงชูรส": { cal: 0, protein: 0, fat: 0, carb: 0, unit: "ช้อนชา", baseAmount: 1, category: "เครื่องปรุง & ไขมัน" }
 };
 
-// ฟังก์ชันบีบอัดภาพฝั่งเบราว์เซอร์
+// Helper: หาข้อมูลวัตถุดิบที่ตรงที่สุดจากชื่อ
+const matchNutritionInfo = (name: string) => {
+  const cleanName = name.trim().toLowerCase();
+  const exactKey = Object.keys(nutritionDB).find((k) => k.toLowerCase() === cleanName);
+  if (exactKey) return nutritionDB[exactKey];
+
+  const matchedKey = Object.keys(nutritionDB).find(
+    (k) => cleanName.includes(k.toLowerCase()) || k.toLowerCase().includes(cleanName)
+  );
+  return matchedKey ? nutritionDB[matchedKey] : null;
+};
+
+// Helper: บีบอัดภาพฝั่งเบราว์เซอร์
 const compressImage = (file: File): Promise<{ base64: string; mimeType: string }> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -136,8 +148,7 @@ const compressImage = (file: File): Promise<{ base64: string; mimeType: string }
       img.onload = () => {
         const canvas = document.createElement("canvas");
         const MAX_WIDTH = 1024;
-        let width = img.width;
-        let height = img.height;
+        let { width, height } = img;
 
         if (width > MAX_WIDTH) {
           height = Math.round((height * MAX_WIDTH) / width);
@@ -146,7 +157,6 @@ const compressImage = (file: File): Promise<{ base64: string; mimeType: string }
 
         canvas.width = width;
         canvas.height = height;
-
         const ctx = canvas.getContext("2d");
         ctx?.drawImage(img, 0, 0, width, height);
 
@@ -164,17 +174,16 @@ const compressImage = (file: File): Promise<{ base64: string; mimeType: string }
 
 export default function CalculatePage() {
   const [activeMode, setActiveMode] = useState<"ai" | "manual">("ai");
-
   const [supabaseRecipes, setSupabaseRecipes] = useState<DbRecipe[]>([]);
   const [isLoadingRecipes, setIsLoadingRecipes] = useState(false);
 
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  
+
   const [originalResult, setOriginalResult] = useState<NutritionResult | null>(null);
   const [editableResult, setEditableResult] = useState<NutritionResult | null>(null);
-  
+
   const [isDragging, setIsDragging] = useState(false);
   const [manualSearchQuery, setManualSearchQuery] = useState("");
   const [isSearchingManual, setIsSearchingManual] = useState(false);
@@ -191,38 +200,50 @@ export default function CalculatePage() {
   const [manualInputAmount, setManualInputAmount] = useState<number>(100);
   const [manualIngList, setManualIngList] = useState<ManualIngredientItem[]>([
     { name: "อกไก่", amount: 150, unit: "กรัม", calPerUnit: 1.65, protein: 0.31, fat: 0.036, carb: 0 },
-    { name: "น้ำมันพืช", amount: 1, unit: "ช้อนโต๊ะ", calPerUnit: 120, protein: 0, fat: 14, carb: 0 }
+    { name: "น้ำมันพืช", amount: 1, unit: "ช้อนโต๊ะ", calPerUnit: 120, protein: 0, fat: 14, carb: 0 },
   ]);
 
+  // Clean up Object URL เพื่อตัด Memory Leak
   useEffect(() => {
+    return () => {
+      if (previewUrl && previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
+  // Fetch เมนูเริ่มต้นจาก API
+  useEffect(() => {
+    let isMounted = true;
     const fetchRecipes = async () => {
       setIsLoadingRecipes(true);
       try {
-        const res = await fetch('/api/recipes?t=' + Date.now(), { cache: 'no-store' });
+        const res = await fetch(`/api/recipes?t=${Date.now()}`, { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data)) setSupabaseRecipes(data);
+          if (isMounted && Array.isArray(data)) setSupabaseRecipes(data);
         }
       } catch (err) {
         console.error("ดึงข้อมูลเมนูอาหารไม่สำเร็จ:", err);
       } finally {
-        setIsLoadingRecipes(false);
+        if (isMounted) setIsLoadingRecipes(false);
       }
     };
     fetchRecipes();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleSelectSupabaseRecipe = (recipeName: string) => {
     if (!recipeName) return;
-    const selected = supabaseRecipes.find(r => r.name === recipeName);
+    const selected = supabaseRecipes.find((r) => r.name === recipeName);
     if (!selected || !selected.ingredients) return;
 
     setCustomDishName(selected.name);
 
     const generatedItems: ManualIngredientItem[] = selected.ingredients.map((ingName) => {
-      const matchedKey = Object.keys(nutritionDB).find(k => ingName.includes(k) || k.includes(ingName));
-      const info = matchedKey ? nutritionDB[matchedKey] : null;
-
+      const info = matchNutritionInfo(ingName);
       if (info) {
         const defaultAmt = info.unit === "ช้อนโต๊ะ" || info.unit === "ฟอง" || info.unit === "ลูก" ? 1 : 50;
         return {
@@ -232,46 +253,55 @@ export default function CalculatePage() {
           calPerUnit: info.cal / info.baseAmount,
           protein: info.protein / info.baseAmount,
           fat: info.fat / info.baseAmount,
-          carb: info.carb / info.baseAmount
-        };
-      } else {
-        return {
-          name: ingName,
-          amount: 30,
-          unit: "กรัม",
-          calPerUnit: 0.8,
-          protein: 0.05,
-          fat: 0.02,
-          carb: 0.1
+          carb: info.carb / info.baseAmount,
         };
       }
+      return {
+        name: ingName,
+        amount: 30,
+        unit: "กรัม",
+        calPerUnit: 0.8,
+        protein: 0.05,
+        fat: 0.02,
+        carb: 0.1,
+      };
     });
 
     setManualIngList(generatedItems);
   };
 
-  const manualTotalCal = Math.round(manualIngList.reduce((sum, item) => sum + (item.calPerUnit * item.amount), 0));
-  const manualTotalProtein = Math.round(manualIngList.reduce((sum, item) => sum + (item.protein * item.amount), 0));
-  const manualTotalFat = Math.round(manualIngList.reduce((sum, item) => sum + (item.fat * item.amount), 0));
-  const manualTotalCarb = Math.round(manualIngList.reduce((sum, item) => sum + (item.carb * item.amount), 0));
+  // คำนวณผลรวมโภชนาการแบบ Real-time ตามวัตถุดิบจริง
+  const manualTotalCal = Math.round(manualIngList.reduce((sum, item) => sum + item.calPerUnit * item.amount, 0));
+  const manualTotalProtein = Math.round(manualIngList.reduce((sum, item) => sum + item.protein * item.amount, 0));
+  const manualTotalFat = Math.round(manualIngList.reduce((sum, item) => sum + item.fat * item.amount, 0));
+  const manualTotalCarb = Math.round(manualIngList.reduce((sum, item) => sum + item.carb * item.amount, 0));
 
   const handleFileChange = (file: File) => {
     if (!file.type.startsWith("image/")) {
       alert("กรุณาอัปโหลดไฟล์รูปภาพเท่านั้นครับ");
       return;
     }
+    if (previewUrl && previewUrl.startsWith("blob:")) {
+      URL.revokeObjectURL(previewUrl);
+    }
     setImageFile(file);
     setPreviewUrl(URL.createObjectURL(file));
-    setOriginalResult(null); 
+    setOriginalResult(null);
     setEditableResult(null);
   };
 
-  const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
-  const onDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+  const onDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) handleFileChange(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files?.[0]) handleFileChange(e.dataTransfer.files[0]);
   };
 
   const analyzeFoodImage = async () => {
@@ -284,18 +314,16 @@ export default function CalculatePage() {
     try {
       const { base64: base64Data, mimeType } = await compressImage(imageFile);
 
-      const response = await fetch('/api/analyze-food', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/analyze-food", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageBase64: base64Data, mimeType }),
       });
 
-      // 🌟 อ่านเป็นข้อความดิบก่อน เพื่อป้องกัน syntax error จากหน้า error ของ Vercel
       const rawText = await response.text();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let responseData: any;
-      
-    try {
+      let responseData: Record<string, unknown>;
+
+      try {
         responseData = JSON.parse(rawText);
       } catch {
         if (response.status === 504 || rawText.includes("An error occurred")) {
@@ -305,20 +333,32 @@ export default function CalculatePage() {
       }
 
       if (!response.ok) {
-        throw new Error(responseData.details || responseData.error || `Server Error (${response.status})`);
+        throw new Error((responseData.details as string) || (responseData.error as string) || `Server Error (${response.status})`);
       }
-      
+
+      const rawIngredients = Array.isArray(responseData.ingredients) ? responseData.ingredients : [];
+      const parsedIngredients: IngredientItem[] = rawIngredients.map((item: unknown) => {
+        if (typeof item === "string") return { name: item, weight: 100 };
+        if (typeof item === "object" && item !== null && "name" in item) {
+          return {
+            name: String((item as { name: string }).name),
+            weight: Number((item as { weight?: number }).weight) || 100,
+          };
+        }
+        return { name: "วัตถุดิบ", weight: 50 };
+      });
+
       const data: NutritionResult = {
-        ...responseData,
-        ingredients: (responseData.ingredients || []).map((ing: string) => ({
-          name: ing,
-          weight: 100 
-        }))
+        foodName: String(responseData.foodName || "อาหารจากการวิเคราะห์"),
+        calories: Number(responseData.calories) || 0,
+        protein: Number(responseData.protein) || 0,
+        carbs: Number(responseData.carbs) || 0,
+        fat: Number(responseData.fat) || 0,
+        ingredients: parsedIngredients,
       };
 
       setOriginalResult(JSON.parse(JSON.stringify(data)));
-      setEditableResult(JSON.parse(JSON.stringify(data))); 
-
+      setEditableResult(JSON.parse(JSON.stringify(data)));
     } catch (error: unknown) {
       console.error("AI Analysis Error:", error);
       alert(`❌ เกิดข้อผิดพลาด: ${(error as Error)?.message || "ไม่สามารถเชื่อมต่อกับ AI ได้"}`);
@@ -327,30 +367,74 @@ export default function CalculatePage() {
     }
   };
 
+  // ค้นหาเมนูอาหารจริงจากฐานข้อมูลระบบ (แทนที่ Mock หลอก)
   const handleManualSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!manualSearchQuery.trim()) return;
-    
+    const query = manualSearchQuery.trim().toLowerCase();
+    if (!query) return;
+
     setIsSearchingManual(true);
-    setTimeout(() => {
-      const dummyData: NutritionResult = {
-        foodName: manualSearchQuery,
-        calories: 350,
-        protein: 20,
-        carbs: 45,
-        fat: 10,
-        ingredients: [
-          { name: manualSearchQuery, weight: 150 },
-          { name: "เครื่องปรุงพื้นฐาน", weight: 15 }
-        ]
+
+    const matchedRecipe = supabaseRecipes.find((r) => r.name.toLowerCase().includes(query));
+    if (matchedRecipe && matchedRecipe.ingredients) {
+      let totalCal = 0;
+      let totalProtein = 0;
+      let totalCarbs = 0;
+      let totalFat = 0;
+
+      const ingredientsList: IngredientItem[] = matchedRecipe.ingredients.map((ing) => {
+        const info = matchNutritionInfo(ing);
+        const weight = 80;
+        if (info) {
+          const ratio = weight / info.baseAmount;
+          totalCal += info.cal * ratio;
+          totalProtein += info.protein * ratio;
+          totalCarbs += info.carb * ratio;
+          totalFat += info.fat * ratio;
+        } else {
+          totalCal += 60;
+          totalProtein += 3;
+          totalCarbs += 5;
+          totalFat += 2;
+        }
+        return { name: ing, weight };
+      });
+
+      const foundData: NutritionResult = {
+        foodName: matchedRecipe.name,
+        calories: Math.round(totalCal),
+        protein: Math.round(totalProtein),
+        carbs: Math.round(totalCarbs),
+        fat: Math.round(totalFat),
+        ingredients: ingredientsList,
       };
-      
-      setOriginalResult(JSON.parse(JSON.stringify(dummyData)));
-      setEditableResult(JSON.parse(JSON.stringify(dummyData)));
-      setPreviewUrl("https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=800&auto=format&fit=crop"); 
-      setIsSearchingManual(false);
-      setManualSearchQuery("");
-    }, 1000);
+
+      setOriginalResult(JSON.parse(JSON.stringify(foundData)));
+      setEditableResult(JSON.parse(JSON.stringify(foundData)));
+      setPreviewUrl("https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=800&auto=format&fit=crop");
+    } else {
+      // ค้นตรงใน Local DB
+      const matchedDbKey = Object.keys(nutritionDB).find((k) => k.toLowerCase().includes(query));
+      if (matchedDbKey) {
+        const item = nutritionDB[matchedDbKey];
+        const singleData: NutritionResult = {
+          foodName: matchedDbKey,
+          calories: item.cal,
+          protein: item.protein,
+          carbs: item.carb,
+          fat: item.fat,
+          ingredients: [{ name: matchedDbKey, weight: item.baseAmount }],
+        };
+        setOriginalResult(JSON.parse(JSON.stringify(singleData)));
+        setEditableResult(JSON.parse(JSON.stringify(singleData)));
+        setPreviewUrl("https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=800&auto=format&fit=crop");
+      } else {
+        alert(`ไม่พบข้อมูลสำหรับ "${manualSearchQuery}" ในฐานข้อมูล กรุณาลองใช้โหมดกำหนดวัตถุดิบเอง`);
+      }
+    }
+
+    setIsSearchingManual(false);
+    setManualSearchQuery("");
   };
 
   const addIngredient = () => {
@@ -358,9 +442,9 @@ export default function CalculatePage() {
     setEditableResult({
       ...editableResult,
       ingredients: [
-        ...editableResult.ingredients, 
-        { name: newIngredientName.trim(), weight: Number(newIngredientWeight) }
-      ]
+        ...editableResult.ingredients,
+        { name: newIngredientName.trim(), weight: Number(newIngredientWeight) },
+      ],
     });
     setNewIngredientName("");
     setNewIngredientWeight("");
@@ -370,64 +454,108 @@ export default function CalculatePage() {
     if (!editableResult) return;
     setEditableResult({
       ...editableResult,
-      ingredients: editableResult.ingredients.filter((_, index) => index !== indexToRemove)
+      ingredients: editableResult.ingredients.filter((_, index) => index !== indexToRemove),
     });
   };
 
   const updateIngredientWeight = (index: number, newWeight: number) => {
     if (!editableResult) return;
     const updatedIngredients = [...editableResult.ingredients];
-    updatedIngredients[index] = { ...updatedIngredients[index], weight: newWeight }; 
+    updatedIngredients[index] = { ...updatedIngredients[index], weight: Math.max(0, newWeight) };
     setEditableResult({ ...editableResult, ingredients: updatedIngredients });
   };
 
-  const handleRecalculate = () => {
+  // ตรรกะคำนวณสารอาหารใหม่ที่แท้จริง: อ้างอิงตาม Macro ของแต่ละวัตถุดิบที่มีการปรับเปลี่ยน
+  const handleRecalculate = useCallback(() => {
     if (!editableResult || !originalResult) return;
     setIsRecalculating(true);
-    
-    setTimeout(() => {
-      const originalTotalWeight = originalResult.ingredients.reduce((sum, ing) => sum + (ing.weight || 0), 0) || 1; 
-      const currentTotalWeight = editableResult.ingredients.reduce((sum, ing) => sum + (ing.weight || 0), 0);
-      const ratio = currentTotalWeight / originalTotalWeight;
-      
-      setEditableResult({
-        ...editableResult,
-        calories: Math.round(originalResult.calories * ratio),
-        protein: Math.round(originalResult.protein * ratio),
-        carbs: Math.round(originalResult.carbs * ratio),
-        fat: Math.round(originalResult.fat * ratio),
+
+    try {
+      // คำนวณ Delta ของส่วนผสมที่เปลี่ยนแปลง
+      let deltaCal = 0;
+      let deltaProtein = 0;
+      let deltaCarbs = 0;
+      let deltaFat = 0;
+
+      editableResult.ingredients.forEach((currIng) => {
+        const origIng = originalResult.ingredients.find((o) => o.name === currIng.name);
+        const origWeight = origIng ? origIng.weight : 0;
+        const weightDiff = currIng.weight - origWeight;
+
+        if (weightDiff !== 0) {
+          const info = matchNutritionInfo(currIng.name);
+          if (info) {
+            const factor = weightDiff / info.baseAmount;
+            deltaCal += info.cal * factor;
+            deltaProtein += info.protein * factor;
+            deltaCarbs += info.carb * factor;
+            deltaFat += info.fat * factor;
+          } else {
+            // ค่าเฉลี่ยมาตรฐาน (1.5 kcal/g) หากไม่พบใน Dictionary
+            deltaCal += weightDiff * 1.5;
+            deltaProtein += weightDiff * 0.1;
+            deltaCarbs += weightDiff * 0.15;
+            deltaFat += weightDiff * 0.05;
+          }
+        }
       });
-      
+
+      // จัดการรายการที่ถูกลบออกไป
+      originalResult.ingredients.forEach((origIng) => {
+        const exists = editableResult.ingredients.some((c) => c.name === origIng.name);
+        if (!exists) {
+          const info = matchNutritionInfo(origIng.name);
+          if (info) {
+            const factor = origIng.weight / info.baseAmount;
+            deltaCal -= info.cal * factor;
+            deltaProtein -= info.protein * factor;
+            deltaCarbs -= info.carb * factor;
+            deltaFat -= info.fat * factor;
+          } else {
+            deltaCal -= origIng.weight * 1.5;
+            deltaProtein -= origIng.weight * 0.1;
+            deltaCarbs -= origIng.weight * 0.15;
+            deltaFat -= origIng.weight * 0.05;
+          }
+        }
+      });
+
+      setEditableResult((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          calories: Math.max(0, Math.round(originalResult.calories + deltaCal)),
+          protein: Math.max(0, Math.round(originalResult.protein + deltaProtein)),
+          carbs: Math.max(0, Math.round(originalResult.carbs + deltaCarbs)),
+          fat: Math.max(0, Math.round(originalResult.fat + deltaFat)),
+        };
+      });
+    } finally {
       setIsRecalculating(false);
-    }, 800);
-  };
+    }
+  }, [editableResult, originalResult]);
 
   const handleSaveToDiary = () => {
     if (!editableResult || !originalResult) return;
-    const saveMethod = editableResult.calories !== originalResult.calories ? 'manual_edit' : 'ai_vision';
-    
-    // eslint-disable-next-line react-hooks/purity
-    const currentId = Date.now().toString();
-
-    const currentTime = new Date().toISOString();
+    const saveMethod = editableResult.calories !== originalResult.calories ? "manual_edit" : "ai_vision";
 
     const newLogEntry = {
-      id: currentId,
-      timestamp: currentTime,
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
       foodName: editableResult.foodName,
       calories: editableResult.calories,
       protein: editableResult.protein,
       carbs: editableResult.carbs,
       fat: editableResult.fat,
       ingredients: editableResult.ingredients,
-      saveMethod: saveMethod 
+      saveMethod,
     };
 
     try {
-      const existingLogs = localStorage.getItem('nutrition_logs');
+      const existingLogs = localStorage.getItem("nutrition_logs");
       const parsedLogs = existingLogs ? JSON.parse(existingLogs) : [];
-      localStorage.setItem('nutrition_logs', JSON.stringify([newLogEntry, ...parsedLogs]));
-      alert(`✅ บันทึกลงสมุดสำเร็จ!\nเพิ่มเมนู "${editableResult.foodName}" (${editableResult.calories} kcal) แล้วครับ`);
+      localStorage.setItem("nutrition_logs", JSON.stringify([newLogEntry, ...parsedLogs]));
+      alert(`✅ บันทึกลงสมุดสำเร็จ!\nเพิ่มเมนู "${editableResult.foodName}" (${editableResult.calories} kcal) เรียบร้อย`);
       resetAll();
     } catch (error) {
       console.error("Save Error:", error);
@@ -437,11 +565,17 @@ export default function CalculatePage() {
 
   const handleInputChange = (field: keyof NutritionResult, value: string) => {
     if (editableResult) {
-      setEditableResult({ ...editableResult, [field]: field === 'foodName' ? value : Number(value) });
+      setEditableResult({
+        ...editableResult,
+        [field]: field === "foodName" ? value : Number(value) || 0,
+      });
     }
   };
 
   const resetAll = () => {
+    if (previewUrl && previewUrl.startsWith("blob:")) {
+      URL.revokeObjectURL(previewUrl);
+    }
     setImageFile(null);
     setPreviewUrl(null);
     setOriginalResult(null);
@@ -462,14 +596,14 @@ export default function CalculatePage() {
       calPerUnit: info.cal / info.baseAmount,
       protein: info.protein / info.baseAmount,
       fat: info.fat / info.baseAmount,
-      carb: info.carb / info.baseAmount
+      carb: info.carb / info.baseAmount,
     };
 
-    setManualIngList(prev => [...prev, newItem]);
+    setManualIngList((prev) => [...prev, newItem]);
   };
 
   const handleRemoveManualItem = (index: number) => {
-    setManualIngList(prev => prev.filter((_, i) => i !== index));
+    setManualIngList((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleUpdateManualItemAmount = (index: number, newAmt: number) => {
@@ -484,26 +618,25 @@ export default function CalculatePage() {
       return;
     }
 
-   
-    const currentId = Date.now().toString();
-    const currentTime = new Date().toISOString();
-
     const newLogEntry = {
-      id: currentId,
-      timestamp: currentTime,
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
       foodName: customDishName || "เมนูคำนวณวัตถุดิบเอง",
       calories: manualTotalCal,
       protein: manualTotalProtein,
       carbs: manualTotalCarb,
       fat: manualTotalFat,
-      ingredients: manualIngList.map(item => ({ name: `${item.name} (${item.amount} ${item.unit})`, weight: item.amount })),
-      saveMethod: 'ingredient_calculator'
+      ingredients: manualIngList.map((item) => ({
+        name: `${item.name} (${item.amount} ${item.unit})`,
+        weight: item.amount,
+      })),
+      saveMethod: "ingredient_calculator",
     };
 
     try {
-      const existingLogs = localStorage.getItem('nutrition_logs');
+      const existingLogs = localStorage.getItem("nutrition_logs");
       const parsedLogs = existingLogs ? JSON.parse(existingLogs) : [];
-      localStorage.setItem('nutrition_logs', JSON.stringify([newLogEntry, ...parsedLogs]));
+      localStorage.setItem("nutrition_logs", JSON.stringify([newLogEntry, ...parsedLogs]));
       alert(`✅ บันทึกเมนู "${customDishName}" (${manualTotalCal} kcal) ลงสมุดเรียบร้อยแล้วครับ!`);
     } catch (error) {
       console.error("Save Error:", error);
@@ -513,19 +646,14 @@ export default function CalculatePage() {
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] font-sans pb-24 flex flex-col items-center">
-      
       {/* Header */}
       <div className="w-full bg-white border-b border-gray-100 pt-14 pb-8 px-4 shadow-[0_10px_30px_rgb(0,0,0,0.02)] text-center relative z-10">
         <div className="inline-flex items-center gap-2 bg-orange-50 text-[#f26522] px-4 py-1.5 rounded-full font-bold text-sm mb-4 border border-orange-100">
           <span className="w-2 h-2 rounded-full bg-[#f26522] animate-pulse"></span>
           AI Vision Food Scanner & Nutrition Calculator
         </div>
-        <h1 className="text-3xl md:text-5xl font-extrabold text-gray-900 mb-2 tracking-tight">
-          คำนวณโภชนาการอาหาร
-        </h1>
-        <h2 className="text-xl md:text-2xl font-bold text-[#f26522] mb-6">
-          รู้แคลอรี่และสารอาหารทันที
-        </h2>
+        <h1 className="text-3xl md:text-5xl font-extrabold text-gray-900 mb-2 tracking-tight">คำนวณโภชนาการอาหาร</h1>
+        <h2 className="text-xl md:text-2xl font-bold text-[#f26522] mb-6">รู้แคลอรี่และสารอาหารทันที</h2>
 
         {/* แถบสลับโหมด */}
         <div className="inline-flex p-1.5 bg-gray-100/80 rounded-2xl border border-gray-200 shadow-inner max-w-md mx-auto mb-2">
@@ -553,14 +681,18 @@ export default function CalculatePage() {
 
         {activeMode === "ai" && (
           <form onSubmit={handleManualSearch} className="max-w-xl mx-auto relative mt-6">
-            <input 
-              type="text" 
-              placeholder="หรือค้นหาชื่ออาหารด้วยตัวเอง..." 
+            <input
+              type="text"
+              placeholder="ค้นหาชื่อเมนู เช่น ข้าวมันไก่, ผัดไทย, อกไก่..."
               value={manualSearchQuery}
               onChange={(e) => setManualSearchQuery(e.target.value)}
               className="w-full bg-gray-50 border border-gray-200 text-gray-800 text-base rounded-full px-6 py-3.5 pr-28 focus:outline-none focus:ring-2 focus:ring-[#f26522] transition-shadow shadow-sm"
             />
-            <button type="submit" disabled={isSearchingManual} className="absolute right-1.5 top-1.5 bottom-1.5 bg-gray-900 hover:bg-black text-white font-bold rounded-full px-5 transition-colors text-sm">
+            <button
+              type="submit"
+              disabled={isSearchingManual}
+              className="absolute right-1.5 top-1.5 bottom-1.5 bg-gray-900 hover:bg-black text-white font-bold rounded-full px-5 transition-colors text-sm disabled:opacity-50"
+            >
               {isSearchingManual ? "..." : "ค้นหา"}
             </button>
           </form>
@@ -568,40 +700,41 @@ export default function CalculatePage() {
       </div>
 
       <main className="w-full max-w-4xl mx-auto px-4 mt-8">
-
         {/* 1. โหมดสแกนภาพด้วย AI */}
         {activeMode === "ai" && (
           <>
             {!previewUrl ? (
-              <div 
-                onDragOver={onDragOver} 
-                onDragLeave={onDragLeave} 
+              <div
+                onDragOver={onDragOver}
+                onDragLeave={onDragLeave}
                 onDrop={onDrop}
                 className={`w-full bg-white rounded-[2.5rem] border-2 border-dashed p-8 text-center shadow-sm transition-all duration-300 ${
                   isDragging ? "border-[#f26522] bg-orange-50 scale-[1.02]" : "border-gray-200"
                 }`}
               >
-                {/* ช่องอัปโหลดแบบถ่ายสด */}
-                <input 
+                <input
                   id="direct-camera-input"
-                  type="file" 
-                  accept="image/*" 
+                  type="file"
+                  accept="image/*"
                   capture="environment"
-                  ref={cameraInputRef} 
-                  onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
-                  onChange={(e) => e.target.files && e.target.files[0] && handleFileChange(e.target.files[0])} 
-                  className="hidden" 
+                  ref={cameraInputRef}
+                  onClick={(e) => {
+                    (e.target as HTMLInputElement).value = "";
+                  }}
+                  onChange={(e) => e.target.files?.[0] && handleFileChange(e.target.files[0])}
+                  className="hidden"
                 />
 
-                {/* ช่องอัปโหลดแบบเลือกรูปจากคลังภาพ */}
-                <input 
+                <input
                   id="gallery-file-input"
-                  type="file" 
-                  accept="image/*" 
-                  ref={fileInputRef} 
-                  onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
-                  onChange={(e) => e.target.files && e.target.files[0] && handleFileChange(e.target.files[0])} 
-                  className="hidden" 
+                  type="file"
+                  accept="image/*"
+                  ref={fileInputRef}
+                  onClick={(e) => {
+                    (e.target as HTMLInputElement).value = "";
+                  }}
+                  onChange={(e) => e.target.files?.[0] && handleFileChange(e.target.files[0])}
+                  className="hidden"
                 />
 
                 <div className="flex flex-col items-center justify-center mb-6">
@@ -614,42 +747,50 @@ export default function CalculatePage() {
                   </p>
                 </div>
 
-                {/* ปุ่มเลือก 2 แบบ: ถ่ายรูปสด vs เลือกจากอัลบั้ม */}
                 <div className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
-                  <label 
+                  <label
                     htmlFor="direct-camera-input"
                     className="flex-1 bg-[#f26522] hover:bg-orange-600 text-white font-bold py-4 px-6 rounded-2xl shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2 select-none"
                   >
                     <span>📷</span> ถ่ายรูปสด (เปิดกล้อง)
                   </label>
 
-                  <label 
+                  <label
                     htmlFor="gallery-file-input"
                     className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-4 px-6 rounded-2xl transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2 select-none"
                   >
                     <span>🖼️</span> เลือกจากอัลบั้ม
                   </label>
                 </div>
-
               </div>
             ) : (
               <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row gap-8">
                 <div className="w-full md:w-1/2 flex flex-col items-center">
                   <div className="relative w-full aspect-square rounded-3xl overflow-hidden bg-gray-100 shadow-inner border border-gray-100">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={previewUrl || ""} alt="Preview" className="w-full h-full object-cover" />
+                    <img src={previewUrl} alt="Food Preview" className="w-full h-full object-cover" />
                     {isAnalyzing && (
                       <div className="absolute inset-0 bg-[#f26522]/20 flex flex-col items-center justify-center backdrop-blur-[2px]">
-                          <div className="absolute top-0 left-0 w-full h-1 bg-[#f26522] shadow-[0_0_15px_#f26522] animate-[scan_2s_ease-in-out_infinite]"></div>
-                          <div className="w-16 h-16 border-4 border-white border-t-[#f26522] rounded-full animate-spin mb-4 shadow-lg"></div>
-                          <span className="bg-gray-900/80 text-white px-4 py-2 rounded-full font-bold text-sm shadow-md">AI กำลังวิเคราะห์วัตถุดิบ...</span>
+                        <div className="absolute top-0 left-0 w-full h-1 bg-[#f26522] shadow-[0_0_15px_#f26522] animate-bounce"></div>
+                        <div className="w-16 h-16 border-4 border-white border-t-[#f26522] rounded-full animate-spin mb-4 shadow-lg"></div>
+                        <span className="bg-gray-900/80 text-white px-4 py-2 rounded-full font-bold text-sm shadow-md">
+                          AI กำลังวิเคราะห์วัตถุดิบ...
+                        </span>
                       </div>
                     )}
                   </div>
                   {!isAnalyzing && !editableResult && (
                     <div className="flex gap-4 mt-6 w-full">
-                      <button onClick={resetAll} className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-colors">เปลี่ยนรูป</button>
-                      <button onClick={analyzeFoodImage} className="flex-1 py-4 bg-[#f26522] hover:bg-orange-600 text-white font-bold rounded-2xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2">
+                      <button
+                        onClick={resetAll}
+                        className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-colors"
+                      >
+                        เปลี่ยนรูป
+                      </button>
+                      <button
+                        onClick={analyzeFoodImage}
+                        className="flex-1 py-4 bg-[#f26522] hover:bg-orange-600 text-white font-bold rounded-2xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2"
+                      >
                         <span>✨</span> วิเคราะห์เลย
                       </button>
                     </div>
@@ -660,92 +801,150 @@ export default function CalculatePage() {
                   {!editableResult && !isAnalyzing && (
                     <div className="h-full flex flex-col items-center justify-center text-gray-400 py-12 text-center">
                       <span className="text-6xl mb-4 opacity-30">🍽️</span>
-                      <p className="font-medium">กดปุ่ม &quot;วิเคราะห์เลย&quot; <br/>เพื่อดูข้อมูลโภชนาการ</p>
+                      <p className="font-medium">
+                        กดปุ่ม &quot;วิเคราะห์เลย&quot; <br />
+                        เพื่อดูข้อมูลโภชนาการ
+                      </p>
                     </div>
                   )}
 
                   {isAnalyzing && (
                     <div className="h-full flex flex-col items-center justify-center text-[#f26522] py-12 text-center animate-pulse">
                       <span className="text-4xl mb-4">🧠</span>
-                      <h3 className="font-bold text-xl mb-2">กำลังทำงานอย่างหนัก...</h3>
-                      <p className="text-gray-400 text-sm">Gemini Vision กำลังคำนวณแคลอรี่ให้คุณ</p>
+                      <h3 className="font-bold text-xl mb-2">กำลังประมวลผลโมเดล Vision...</h3>
+                      <p className="text-gray-400 text-sm">จำแนกวัตถุดิบและคำนวณปริมาณสารอาหาร</p>
                     </div>
                   )}
 
                   {editableResult && (
-                    <div className={`animate-fade-in flex flex-col h-full transition-opacity duration-300 ${isRecalculating ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+                    <div
+                      className={`flex flex-col h-full transition-opacity duration-300 ${
+                        isRecalculating ? "opacity-50 pointer-events-none" : "opacity-100"
+                      }`}
+                    >
                       <div className="mb-4">
-                        <div className="inline-block bg-green-100 text-green-700 text-xs font-bold px-3 py-1 rounded-full mb-3"><span>✏️</span> ปรับแต่งและคำนวณใหม่ได้</div>
-                        <input type="text" value={editableResult.foodName} onChange={(e) => handleInputChange('foodName', e.target.value)} className="text-3xl font-extrabold text-gray-900 mb-1 w-full bg-transparent border-b-2 border-transparent hover:border-gray-300 focus:border-[#f26522] outline-none transition-colors" />
+                        <div className="inline-block bg-green-100 text-green-700 text-xs font-bold px-3 py-1 rounded-full mb-3">
+                          <span>✏️</span> ปรับแต่งและคำนวณใหม่ได้
+                        </div>
+                        <input
+                          type="text"
+                          value={editableResult.foodName}
+                          onChange={(e) => handleInputChange("foodName", e.target.value)}
+                          className="text-3xl font-extrabold text-gray-900 mb-1 w-full bg-transparent border-b-2 border-transparent hover:border-gray-300 focus:border-[#f26522] outline-none transition-colors"
+                        />
                         <div className="flex items-end gap-2">
-                          <input type="number" value={editableResult.calories} onChange={(e) => handleInputChange('calories', e.target.value)} className="text-5xl font-black text-[#f26522] bg-transparent border-b-2 border-transparent hover:border-orange-200 focus:border-[#f26522] outline-none transition-colors w-32" />
+                          <input
+                            type="number"
+                            value={editableResult.calories}
+                            onChange={(e) => handleInputChange("calories", e.target.value)}
+                            className="text-5xl font-black text-[#f26522] bg-transparent border-b-2 border-transparent hover:border-orange-200 focus:border-[#f26522] outline-none transition-colors w-36 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
                           <span className="text-xl text-gray-500 font-bold mb-1">kcal</span>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-3 gap-3 mb-6">
                         <div className="bg-blue-50 border border-blue-100 p-3 rounded-2xl flex flex-col items-center transition-all focus-within:ring-2 focus-within:ring-blue-300">
-                          <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1">Protein (g)</p>
-                          <input type="number" value={editableResult.protein} onChange={(e) => handleInputChange('protein', e.target.value)} className="w-full text-xl font-black text-blue-700 bg-transparent text-center outline-none" />
+                          <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1">
+                            Protein (g)
+                          </p>
+                          <input
+                            type="number"
+                            value={editableResult.protein}
+                            onChange={(e) => handleInputChange("protein", e.target.value)}
+                            className="w-full text-xl font-black text-blue-700 bg-transparent text-center outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
                         </div>
                         <div className="bg-green-50 border border-green-100 p-3 rounded-2xl flex flex-col items-center transition-all focus-within:ring-2 focus-within:ring-green-300">
-                          <p className="text-[10px] font-bold text-green-500 uppercase tracking-wider mb-1">Carbs (g)</p>
-                          <input type="number" value={editableResult.carbs} onChange={(e) => handleInputChange('carbs', e.target.value)} className="w-full text-xl font-black text-green-700 bg-transparent text-center outline-none" />
+                          <p className="text-[10px] font-bold text-green-500 uppercase tracking-wider mb-1">
+                            Carbs (g)
+                          </p>
+                          <input
+                            type="number"
+                            value={editableResult.carbs}
+                            onChange={(e) => handleInputChange("carbs", e.target.value)}
+                            className="w-full text-xl font-black text-green-700 bg-transparent text-center outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
                         </div>
                         <div className="bg-yellow-50 border border-yellow-100 p-3 rounded-2xl flex flex-col items-center transition-all focus-within:ring-2 focus-within:ring-yellow-300">
                           <p className="text-[10px] font-bold text-yellow-600 uppercase tracking-wider mb-1">Fat (g)</p>
-                          <input type="number" value={editableResult.fat} onChange={(e) => handleInputChange('fat', e.target.value)} className="w-full text-xl font-black text-yellow-700 bg-transparent text-center outline-none" />
+                          <input
+                            type="number"
+                            value={editableResult.fat}
+                            onChange={(e) => handleInputChange("fat", e.target.value)}
+                            className="w-full text-xl font-black text-yellow-700 bg-transparent text-center outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
                         </div>
                       </div>
 
                       <div className="mb-4">
                         <h4 className="font-bold text-gray-800 mb-3 flex items-center justify-between">
-                          <span className="flex items-center gap-2"><span className="text-[#f26522]">🥗</span> วัตถุดิบ (ปรับน้ำหนักได้)</span>
+                          <span className="flex items-center gap-2">
+                            <span className="text-[#f26522]">🥗</span> วัตถุดิบ (ปรับน้ำหนักได้)
+                          </span>
                         </h4>
-                        
+
                         <div className="flex flex-wrap gap-2 mb-3">
                           {editableResult.ingredients.map((ing, i) => (
-                            <div key={i} className="bg-gray-50 text-gray-700 text-sm font-medium pl-3 pr-1 py-1 rounded-xl border border-gray-200 flex items-center gap-2 group hover:border-orange-300 transition-colors">
-                              <span className="truncate max-w-[100px]">{ing.name}</span>
+                            <div
+                              key={`${ing.name}-${i}`}
+                              className="bg-gray-50 text-gray-700 text-sm font-medium pl-3 pr-1 py-1 rounded-xl border border-gray-200 flex items-center gap-2 group hover:border-orange-300 transition-colors"
+                            >
+                              <span className="truncate max-w-[110px]">{ing.name}</span>
                               <div className="flex items-center bg-white rounded-lg border border-gray-200 px-2 py-0.5 focus-within:border-[#f26522]">
-                                <input 
-                                  type="number" 
-                                  value={ing.weight} 
+                                <input
+                                  type="number"
+                                  value={ing.weight}
                                   onChange={(e) => updateIngredientWeight(i, Number(e.target.value))}
-                                  className="w-10 text-center text-[#f26522] font-bold outline-none bg-transparent hide-arrows"
+                                  className="w-12 text-center text-[#f26522] font-bold outline-none bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 />
                                 <span className="text-[10px] text-gray-400 font-bold ml-0.5">g</span>
                               </div>
-                              <button onClick={() => removeIngredient(i)} className="w-6 h-6 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full font-bold focus:outline-none transition-colors">✕</button>
+                              <button
+                                onClick={() => removeIngredient(i)}
+                                className="w-6 h-6 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full font-bold focus:outline-none transition-colors"
+                              >
+                                ✕
+                              </button>
                             </div>
                           ))}
                         </div>
-                        
+
                         <div className="flex gap-2">
-                          <input 
-                            type="text" 
-                            value={newIngredientName} 
-                            onChange={(e) => setNewIngredientName(e.target.value)} 
-                            placeholder="ชื่อวัตถุดิบ..." 
+                          <input
+                            type="text"
+                            value={newIngredientName}
+                            onChange={(e) => setNewIngredientName(e.target.value)}
+                            placeholder="ชื่อวัตถุดิบ เช่น อกไก่, ผักกาด..."
                             className="w-1/2 bg-white border border-gray-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-[#f26522]"
                           />
-                          <input 
-                            type="number" 
-                            value={newIngredientWeight} 
-                            onChange={(e) => setNewIngredientWeight(e.target.value ? Number(e.target.value) : "")} 
-                            onKeyPress={(e) => e.key === 'Enter' && addIngredient()} 
-                            placeholder="กรัม (g)" 
+                          <input
+                            type="number"
+                            value={newIngredientWeight}
+                            onChange={(e) =>
+                              setNewIngredientWeight(e.target.value ? Number(e.target.value) : "")
+                            }
+                            onKeyDown={(e) => e.key === "Enter" && addIngredient()}
+                            placeholder="กรัม (g)"
                             className="w-1/4 bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#f26522] text-center"
                           />
-                          <button onClick={addIngredient} className="w-1/4 bg-gray-800 hover:bg-gray-900 text-white rounded-xl text-sm font-bold transition-colors">เพิ่ม</button>
+                          <button
+                            onClick={addIngredient}
+                            className="w-1/4 bg-gray-800 hover:bg-gray-900 text-white rounded-xl text-sm font-bold transition-colors"
+                          >
+                            เพิ่ม
+                          </button>
                         </div>
 
-                        <button 
-                          onClick={handleRecalculate} 
+                        <button
+                          onClick={handleRecalculate}
                           className="mt-4 w-full py-3 bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-100 font-bold rounded-xl transition-colors flex justify-center items-center gap-2 shadow-sm"
                         >
                           {isRecalculating ? (
-                            <><div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div> กำลังคำนวณ...</>
+                            <>
+                              <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                              กำลังคำนวณตามสัดส่วน...
+                            </>
                           ) : (
                             <>🔄 คำนวณแคลอรี่ใหม่จากวัตถุดิบ</>
                           )}
@@ -753,15 +952,22 @@ export default function CalculatePage() {
                       </div>
 
                       <div className="mt-auto pt-4 flex gap-3 border-t border-gray-100">
-                        <button onClick={resetAll} className="w-1/3 py-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-all">สแกนใหม่</button>
-                        <button onClick={handleSaveToDiary} className="w-2/3 py-4 bg-gray-900 hover:bg-black text-white font-bold rounded-2xl shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2">
+                        <button
+                          onClick={resetAll}
+                          className="w-1/3 py-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-all"
+                        >
+                          สแกนใหม่
+                        </button>
+                        <button
+                          onClick={handleSaveToDiary}
+                          className="w-2/3 py-4 bg-gray-900 hover:bg-black text-white font-bold rounded-2xl shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+                        >
                           <span>💾</span> บันทึกลงสมุด
                         </button>
                       </div>
                     </div>
                   )}
                 </div>
-
               </div>
             )}
           </>
@@ -769,12 +975,14 @@ export default function CalculatePage() {
 
         {/* 2. โหมดคำนวณตามวัตถุดิบ */}
         {activeMode === "manual" && (
-          <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 p-6 md:p-8 animate-fade-in">
+          <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 p-6 md:p-8">
             <div className="border-b border-gray-100 pb-6 mb-6">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
                 <div>
                   <h3 className="text-2xl font-extrabold text-gray-900">คำนวณโภชนาการตามวัตถุดิบ</h3>
-                  <p className="text-gray-500 text-sm mt-1">เลือกเมนูจากฐานข้อมูล 169 เมนู หรือเพิ่มวัตถุดิบเองเพื่อคำนวณแคลอรี่อย่างละเอียด</p>
+                  <p className="text-gray-500 text-sm mt-1">
+                    เลือกเมนูจากฐานข้อมูลหรือกำหนดวัตถุดิบแต่ละชนิดด้วยตนเอง
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-gray-500">ชื่อเมนู:</span>
@@ -797,8 +1005,8 @@ export default function CalculatePage() {
                     {isLoadingRecipes ? "กำลังโหลดรายชื่อเมนู..." : "-- คลิกเพื่อเลือกเมนูอาหาร --"}
                   </option>
                   {supabaseRecipes.map((r, idx) => (
-                    <option key={idx} value={r.name}>
-                      🍳 {r.name} {r.kcal ? `(${r.kcal})` : ''}
+                    <option key={r.id || idx} value={r.name}>
+                      🍳 {r.name} {r.kcal ? `(${r.kcal})` : ""}
                     </option>
                   ))}
                 </select>
@@ -820,7 +1028,9 @@ export default function CalculatePage() {
                     className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-medium focus:outline-none focus:border-[#f26522]"
                   >
                     {Object.keys(nutritionDB).map((name) => (
-                      <option key={name} value={name}>{name}</option>
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -841,7 +1051,7 @@ export default function CalculatePage() {
                 <div className="flex items-end">
                   <button
                     onClick={handleAddManualItem}
-                    className="w-full bg-[#f26522] hover:bg-orange-600 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-md"
+                    className="w-full bg-[#f26522] hover:bg-orange-600 text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-md active:scale-95"
                   >
                     เพิ่มวัตถุดิบ
                   </button>
@@ -852,19 +1062,27 @@ export default function CalculatePage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
               <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100 text-center">
                 <span className="text-xs font-bold text-orange-600">แคลอรี่รวม</span>
-                <p className="text-3xl font-black text-[#f26522] mt-1">{manualTotalCal} <span className="text-xs font-normal">kcal</span></p>
+                <p className="text-3xl font-black text-[#f26522] mt-1">
+                  {manualTotalCal} <span className="text-xs font-normal">kcal</span>
+                </p>
               </div>
               <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 text-center">
                 <span className="text-xs font-bold text-blue-600">โปรตีน</span>
-                <p className="text-3xl font-black text-blue-700 mt-1">{manualTotalProtein} <span className="text-xs font-normal">g</span></p>
+                <p className="text-3xl font-black text-blue-700 mt-1">
+                  {manualTotalProtein} <span className="text-xs font-normal">g</span>
+                </p>
               </div>
               <div className="bg-yellow-50 p-4 rounded-2xl border border-yellow-100 text-center">
                 <span className="text-xs font-bold text-yellow-600">ไขมัน</span>
-                <p className="text-3xl font-black text-yellow-700 mt-1">{manualTotalFat} <span className="text-xs font-normal">g</span></p>
+                <p className="text-3xl font-black text-yellow-700 mt-1">
+                  {manualTotalFat} <span className="text-xs font-normal">g</span>
+                </p>
               </div>
               <div className="bg-green-50 p-4 rounded-2xl border border-green-100 text-center">
                 <span className="text-xs font-bold text-green-600">คาร์โบไฮเดรต</span>
-                <p className="text-3xl font-black text-green-700 mt-1">{manualTotalCarb} <span className="text-xs font-normal">g</span></p>
+                <p className="text-3xl font-black text-green-700 mt-1">
+                  {manualTotalCarb} <span className="text-xs font-normal">g</span>
+                </p>
               </div>
             </div>
 
@@ -879,7 +1097,10 @@ export default function CalculatePage() {
               ) : (
                 <div className="divide-y divide-gray-100 border border-gray-100 rounded-2xl overflow-hidden mb-6">
                   {manualIngList.map((item, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-4 bg-white hover:bg-gray-50/80 transition-colors">
+                    <div
+                      key={`${item.name}-${idx}`}
+                      className="flex items-center justify-between p-4 bg-white hover:bg-gray-50/80 transition-colors"
+                    >
                       <div className="flex items-center gap-3">
                         <span className="font-bold text-gray-800 text-sm">{item.name}</span>
                         <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg px-2 py-0.5">
@@ -888,7 +1109,7 @@ export default function CalculatePage() {
                             min="1"
                             value={item.amount}
                             onChange={(e) => handleUpdateManualItemAmount(idx, Number(e.target.value))}
-                            className="w-12 text-center text-xs font-bold text-[#f26522] bg-transparent outline-none hide-arrows"
+                            className="w-14 text-center text-xs font-bold text-[#f26522] bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
                           <span className="text-[10px] text-gray-400 font-bold ml-1">{item.unit}</span>
                         </div>
@@ -919,25 +1140,7 @@ export default function CalculatePage() {
             </div>
           </div>
         )}
-
       </main>
-
-      <style dangerouslySetInnerHTML={{__html: `
-        @keyframes scan {
-          0% { top: 0%; opacity: 0; }
-          10% { opacity: 1; }
-          90% { opacity: 1; }
-          100% { top: 100%; opacity: 0; }
-        }
-        input[type="number"].hide-arrows::-webkit-outer-spin-button,
-        input[type="number"].hide-arrows::-webkit-inner-spin-button {
-          -webkit-appearance: none;
-          margin: 0;
-        }
-        input[type="number"].hide-arrows {
-          -moz-appearance: textfield;
-        }
-      `}} />
     </div>
   );
 }
