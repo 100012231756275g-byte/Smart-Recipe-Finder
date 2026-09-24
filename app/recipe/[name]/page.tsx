@@ -53,14 +53,27 @@ interface IngredientCheckResult {
   note: string | null;
 }
 
+// 🌟 ขยายพจนานุกรมความเสี่ยงโรคประจำตัว ให้รองรับตัวเลือกใหม่จาก Dropdown ครบ 100%
 const diseaseRiskMap: Record<string, string[]> = {
   "โรคเบาหวาน": ["น้ำตาล", "นมข้น", "กะทิ", "น้ำเชื่อม", "น้ำผึ้ง"],
+  "เบาหวาน": ["น้ำตาล", "นมข้น", "กะทิ", "น้ำเชื่อม", "น้ำผึ้ง"],
   "โรคความดันโลหิตสูง": ["น้ำปลา", "เกลือ", "ซีอิ๊ว", "ผงชูรส", "กะปิ", "เต้าเจี้ยว", "ซอสหอยนางรม"],
+  "ความดันโลหิตสูง": ["น้ำปลา", "เกลือ", "ซีอิ๊ว", "ผงชูรส", "กะปิ", "เต้าเจี้ยว", "ซอสหอยนางรม"],
   "โรคไขมันในเลือดสูง": ["กะทิ", "หมูสามชั้น", "น้ำมัน", "เนย", "กากหมู", "หมูกรอบ", "คอหมู"],
+  "ไขมันในเลือดสูง": ["กะทิ", "หมูสามชั้น", "น้ำมัน", "เนย", "กากหมู", "หมูกรอบ", "คอหมู"],
   "โรคไตเรื้อรัง": ["น้ำปลา", "เกลือ", "ซีอิ๊ว", "ผงชูรส", "กะปิ", "ผงปรุงรส", "ซุปก้อน"],
+  "โรคไต": ["น้ำปลา", "เกลือ", "ซีอิ๊ว", "ผงชูรส", "กะปิ", "ผงปรุงรส", "ซุปก้อน"],
   "โรคหัวใจและหลอดเลือด": ["น้ำมัน", "กะทิ", "หมูสามชั้น", "เนย"],
+  "โรคหัวใจ": ["น้ำมัน", "กะทิ", "หมูสามชั้น", "เนย"],
+  "โรคเกาต์": ["ไก่", "เป็ด", "เครื่องใน", "กะปิ", "ชะอม", "กระถิน", "หน่อไม้", "เห็ด", "ยอดผัก"],
+  "กรดไหลย้อน": ["พริก", "กระเทียม", "หอมแดง", "หอมใหญ่", "มะนาว", "น้ำส้มสายชู", "ของทอด", "น้ำมัน", "กะทิ"],
+  "โรคกระเพาะอาหาร": ["พริก", "พริกไทย", "มะนาว", "น้ำส้มสายชู", "ของทอด"],
+  "โรคกระเพาะ": ["พริก", "พริกไทย", "มะนาว", "น้ำส้มสายชู", "ของทอด"],
+  "โรคตับ / ไขมันพอกตับ": ["น้ำตาล", "ของทอด", "หมูสามชั้น", "กะทิ", "เนย"],
+  "โรคตับ": ["น้ำตาล", "ของทอด", "หมูสามชั้น", "กะทิ", "เนย"],
+  "ไขมันพอกตับ": ["น้ำตาล", "ของทอด", "หมูสามชั้น", "กะทิ", "เนย"],
   "โรคอ้วนลงพุง": ["น้ำตาล", "กะทิ", "น้ำมัน", "หมูสามชั้น", "แป้งมัน", "แป้งทอดกรอบ"],
-  "โรคเกาต์": ["ไก่", "เป็ด", "เครื่องใน", "กะปิ", "ชะอม", "กระถิน", "หน่อไม้", "เห็ด", "ยอดผัก"]
+  "อ้วนลงพุง": ["น้ำตาล", "กะทิ", "น้ำมัน", "หมูสามชั้น", "แป้งมัน", "แป้งทอดกรอบ"]
 };
 
 // 💡 พจนานุกรมวัตถุดิบทดแทนอัจฉริยะ
@@ -97,7 +110,7 @@ const spicyKeywords = ["พริก", "เผ็ด", "ต้มยำ", "ย�
 const hardToChewKeywords = ["ทอดกรอบ", "หมูกรอบ", "เหนียว", "เอ็น", "กระดูกอ่อน"];
 const nonHalalKeywords = ["หมู", "หมูกรอบ", "หมูสามชั้น", "กุนเชียง", "เบคอน", "lard", "เลือดหมู", "เหล้า", "มิริน", "ไวน์"];
 
-// 🌟 ฟังก์ชันคำนวณปริมาณมาตรฐานที่สูตรต้องใช้ (Ground Truth)
+// 🌟 ฟังก์ชันคำนวณปริมาณมาตรฐานที่สูตรต้องใช้
 function getIngredientPortion(ingName: string): { amount: number; unit: string } {
   try {
     const master = findMatchedNutrition(ingName);
@@ -112,7 +125,7 @@ function getIngredientPortion(ingName: string): { amount: number; unit: string }
       return { amount: master.defaultPortionGrams || 50, unit: "กรัม" };
     }
   } catch {
-    // ใช้ Fallback เมื่อค้นหาไม่เจอ
+    // Fallback
   }
 
   const clean = ingName.toLowerCase();
@@ -168,10 +181,23 @@ function RecipeDetailContent() {
   const [imageError, setImageError] = useState(false);
   const [isWarningOpen, setIsWarningOpen] = useState(false);
 
-  // ฟังก์ชันอ่านข้อมูลจากตู้เย็นแบบ Real-time
+  // 🌟 ฟังก์ชันอ่านข้อมูลจากตู้เย็นแบบ Real-time พร้อมรองรับ Key แยกตาม User
   const loadFridgeData = useCallback(() => {
     if (typeof window === "undefined") return;
+
+    let activeKey = "default_user";
+    const savedUserStr = sessionStorage.getItem("mockUser") || localStorage.getItem("mockUser");
+    if (savedUserStr) {
+      try {
+        const u = JSON.parse(savedUserStr);
+        activeKey = u.contact || u.email || u.id || u.name || "default_user";
+      } catch {
+        // ignore
+      }
+    }
+
     const savedFridgeStr =
+      (activeKey !== "default_user" ? localStorage.getItem(`myFridgeItems_${activeKey}`) : null) ||
       localStorage.getItem("myFridgeItems") ||
       localStorage.getItem("fridge") ||
       localStorage.getItem("fridgeIngredients") ||
@@ -213,6 +239,10 @@ function RecipeDetailContent() {
       { id: "4", name: "กวางตุ้ง", amount: "1 กำ", icon: "🥬", daysLeft: 4, expiryDateText: "4 วัน" },
       { id: "5", name: "ขิง", amount: "1 แง่ง", icon: "🫚", daysLeft: 7, expiryDateText: "7 วัน" }
     ];
+
+    if (currentUserContact && currentUserContact !== "default_user") {
+      localStorage.setItem(`myFridgeItems_${currentUserContact}`, JSON.stringify(demoItems));
+    }
     localStorage.setItem("myFridgeItems", JSON.stringify(demoItems));
     localStorage.setItem("fridge", JSON.stringify(demoItems));
     loadFridgeData();
@@ -235,6 +265,8 @@ function RecipeDetailContent() {
         try {
           const savedUser = JSON.parse(savedUserStr);
           if (savedUser.contact) setCurrentUserContact(savedUser.contact);
+          else if (savedUser.email) setCurrentUserContact(savedUser.email);
+          else if (savedUser.name) setCurrentUserContact(savedUser.name);
         } catch (e) {
           console.error(e);
         }
@@ -481,7 +513,6 @@ function RecipeDetailContent() {
     });
 
     if (matchedDetailed) {
-      // ดึงตัวเลขจาก amount ที่บันทึกไว้ในตู้เย็น (เช่น "300 กรัม" หรือ 300)
       let parsedAmount = 0;
       if (typeof matchedDetailed.amount === "number") {
         parsedAmount = matchedDetailed.amount;
@@ -490,7 +521,6 @@ function RecipeDetailContent() {
         if (numMatch) parsedAmount = parseFloat(numMatch[0]);
       }
 
-      // ถ้าในตู้เย็นมีแต่ชื่อ ไม่ได้ระบุปริมาณ ให้ถือว่ามีพอดีตามสูตร
       const currentAmount = parsedAmount > 0 ? parsedAmount : requiredAmount;
 
       if (currentAmount >= requiredAmount) {
@@ -599,10 +629,11 @@ function RecipeDetailContent() {
     allergicIngredients = recipe.ingredients?.filter(ing => userAllergies.some(allergy => ing.includes(allergy))) || [];
 
     userDiseases.forEach(disease => {
-      const riskyKeywords = diseaseRiskMap[disease] || [];
+      const cleanDisease = disease.trim();
+      const riskyKeywords = diseaseRiskMap[cleanDisease] || [];
       const foundRisks = recipe.ingredients?.filter(ing => riskyKeywords.some(keyword => ing.includes(keyword))) || [];
       if (foundRisks.length > 0) {
-        diseaseWarnings.push({ disease, ingredients: foundRisks });
+        diseaseWarnings.push({ disease: cleanDisease, ingredients: foundRisks });
       }
     });
 
