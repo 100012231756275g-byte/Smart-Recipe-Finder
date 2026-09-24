@@ -47,6 +47,8 @@ export default function EditProfilePage() {
   // 🌟 โหลดข้อมูลจาก Supabase Auth และ Database จริง
   // ==========================================
   useEffect(() => {
+    let isMounted = true;
+
     const loadUserData = async () => {
       let activeUserId = "";
       let activeUserName = "";
@@ -54,7 +56,7 @@ export default function EditProfilePage() {
       // 1. ดึง User จาก Supabase Auth จริงเป็นลำดับแรก
       try {
         const { data: authData } = await supabase.auth.getUser();
-        if (authData?.user) {
+        if (authData?.user && isMounted) {
           activeUserId = authData.user.id;
           setUserId(authData.user.id);
         }
@@ -68,12 +70,12 @@ export default function EditProfilePage() {
         if (savedUserStr) {
           try {
             const savedUser = JSON.parse(savedUserStr);
-            if (savedUser.name) {
+            if (savedUser.name && isMounted) {
               setName(savedUser.name);
               setCurrentUsername(savedUser.name);
               activeUserName = savedUser.name;
             }
-            if (savedUser.id) {
+            if (savedUser.id && isMounted) {
               activeUserId = savedUser.id;
               setUserId(savedUser.id);
             }
@@ -95,7 +97,7 @@ export default function EditProfilePage() {
 
           const { data, error } = await query.maybeSingle();
 
-          if (data && !error) {
+          if (data && !error && isMounted) {
             if (data.id) setUserId(data.id);
             if (data.full_name) {
               setName(data.full_name);
@@ -119,13 +121,22 @@ export default function EditProfilePage() {
       }
 
       // 4. ค่า Fallback จาก LocalStorage (กรณีฐานข้อมูลยังว่าง)
-      setGender((prev) => prev || localStorage.getItem("user_gender") || "male");
-      setAge((prev) => prev || localStorage.getItem("user_age") || "");
-      setWeight((prev) => prev || localStorage.getItem("user_weight") || "");
-      setHeight((prev) => prev || localStorage.getItem("user_height") || "");
+      if (isMounted) {
+        setGender((prev) => prev || localStorage.getItem("user_gender") || "male");
+        setAge((prev) => prev || localStorage.getItem("user_age") || "");
+        setWeight((prev) => prev || localStorage.getItem("user_weight") || "");
+        setHeight((prev) => prev || localStorage.getItem("user_height") || "");
+      }
     };
 
-    loadUserData();
+    const timer = setTimeout(() => {
+      loadUserData();
+    }, 0);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
   }, []);
 
   // ==========================================
@@ -195,7 +206,7 @@ export default function EditProfilePage() {
   const removeDisease = (target: string) => { setDiseases(diseases.filter((d) => d !== target)); };
 
   // ==========================================
-  // 🌟 ฟังก์ชัน SAVE (ปลอดภัย ทนทาน ไม่ทำข้อมูลสูญหาย)
+  // 🌟 ฟังก์ชัน SAVE (บันทึกเสร็จแล้ว Redirect กลับไปที่ /profile)
   // ==========================================
   const handleSave = async () => {
     setIsSaving(true);
@@ -204,7 +215,7 @@ export default function EditProfilePage() {
       const combinedIssues = [...diseases, ...allergies].filter(Boolean);
       const healthIssuesPayload = combinedIssues.length > 0 ? combinedIssues.join(", ") : null;
 
-      // 1. บันทึกลง Client Cache ทันทีเป็นอันดับแรก (รับประกันว่าหน้า Profile จะได้ข้อมูล 100%)
+      // 1. บันทึกลง Client Cache ทันทีเป็นอันดับแรก
       localStorage.setItem("user_gender", gender);
       localStorage.setItem("userGender", gender);
       localStorage.setItem("gender", gender);
@@ -289,8 +300,7 @@ export default function EditProfilePage() {
       localStorage.setItem("profileImage", finalImageUrl);
 
       // 3. เตรียมส่งเข้า Supabase
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const updateData: Record<string, any> = {
+      const updateData: Record<string, unknown> = {
         full_name: trimmedName,
         avatar_url: finalImageUrl,
         age: age && parseInt(age) > 0 ? parseInt(age) : null,
@@ -315,9 +325,7 @@ export default function EditProfilePage() {
       if (updateError) {
         console.warn("Supabase update error:", updateError.message);
         if (updateError.message.includes("column") || updateError.message.includes("schema cache")) {
-          // บันทึกเฉพาะฟิลด์ที่มีอยู่แน่นอน
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const fallbackData: Record<string, any> = {
+          const fallbackData: Record<string, unknown> = {
             full_name: trimmedName,
             avatar_url: finalImageUrl,
             age: age && parseInt(age) > 0 ? parseInt(age) : null,
@@ -349,7 +357,9 @@ export default function EditProfilePage() {
       if (!updateError || !updateError.message.includes("column")) {
         alert("บันทึกข้อมูลเรียบร้อยแล้ว! ✨");
       }
-      router.push("/health-profile");
+
+      // ✅ แก้จุดเชื่อมโยงให้เด้งกลับไปที่หน้า /profile หลัก (ไม่เจอหน้า 404 อีกต่อไป)
+      router.push("/profile");
     } catch (error: unknown) {
       console.error("บันทึกข้อมูลล้มเหลว:", error);
       alert((error as Error)?.message || "เกิดข้อผิดพลาดในการเชื่อมต่อ Supabase");
@@ -465,7 +475,7 @@ export default function EditProfilePage() {
                     {allergies.map((allergy, index) => (
                       <span key={index} className="bg-red-50 border border-red-100 text-red-600 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm">
                         {allergy}
-                        <button type="button" onClick={() => removeAllergy(allergy)} className="text-red-400 hover:text-red-600 transition-colors">✕</button>
+                        <button type="button" onClick={() => removeAllergy(allergy)} className="text-red-400 hover:text-red-600 transition-colors cursor-pointer">✕</button>
                       </span>
                     ))}
                   </div>
@@ -483,7 +493,7 @@ export default function EditProfilePage() {
                         <option key={i} value={a} />
                       ))}
                     </datalist>
-                    <button type="submit" disabled={!newAllergy.trim()} className="px-5 py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 shadow-sm">
+                    <button type="submit" disabled={!newAllergy.trim()} className="px-5 py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 shadow-sm cursor-pointer">
                       เพิ่ม
                     </button>
                   </form>
@@ -496,7 +506,7 @@ export default function EditProfilePage() {
                     {diseases.map((disease, index) => (
                       <span key={index} className="bg-orange-50 border border-orange-100 text-[#f26522] px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm">
                         {disease}
-                        <button type="button" onClick={() => removeDisease(disease)} className="text-orange-300 hover:text-orange-600 transition-colors">✕</button>
+                        <button type="button" onClick={() => removeDisease(disease)} className="text-orange-300 hover:text-orange-600 transition-colors cursor-pointer">✕</button>
                       </span>
                     ))}
                   </div>
@@ -514,7 +524,7 @@ export default function EditProfilePage() {
                         <option key={i} value={d} />
                       ))}
                     </datalist>
-                    <button type="submit" disabled={!newDisease.trim()} className="px-5 py-3 bg-white border border-[#f26522] text-[#f26522] font-bold rounded-xl hover:bg-orange-50 transition-colors disabled:opacity-50 shadow-sm">
+                    <button type="submit" disabled={!newDisease.trim()} className="px-5 py-3 bg-white border border-[#f26522] text-[#f26522] font-bold rounded-xl hover:bg-orange-50 transition-colors disabled:opacity-50 shadow-sm cursor-pointer">
                       เพิ่ม
                     </button>
                   </form>
