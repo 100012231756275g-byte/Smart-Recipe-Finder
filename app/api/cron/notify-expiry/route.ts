@@ -68,7 +68,7 @@ export async function GET(req: Request) {
 .join("");
 
   return resend.emails.send({
- from: "Cook Cook Alert ",
+  from: "Cook Cook Alert ",
   to: email,
   subject: "⚠️ มีของใกล้หมดอายุ " + userItems.length + " รายการ",
   html: `<p>คุณมีวัตถุดิบใกล้หมดอายุใน 3 วันข้างหน้า:</p><ul>${htmlList}</ul><p>กรุณาตรวจสอบและใช้วัตถุดิบเหล่านี้ก่อนหมดอายุ</p>`,
