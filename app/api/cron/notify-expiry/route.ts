@@ -67,15 +67,14 @@ export async function GET(req: Request) {
 )
 .join("");
 
-  return resend.emails.send({
-    from: "Cook Cook Alert ",
-    to: email,
-    subject: "⚠️ มีของใกล้หมดอายุ " + userItems.length + " รายการ",
-    html: `
-      <p>แจ้งเตือนวัตถุดิบใกล้หมดอายุใน 3 วัน</p>
-      <ul>${htmlList}</ul>
-    `
-  });
+ return resend.emails.send({
+  from: "Cook Cook Alert ", // ระบุอีเมลผู้ส่งตามรูปแบบมาตรฐาน
+  to: email,
+  subject: "⚠️ มีของใกล้หมดอายุ " + userItems.length + " รายการ",
+  html: `
+แจ้งเตือนวัตถุดิบใกล้หมดอายุใน 3 วัน
+
+`
 });
 
 await Promise.all(promises);
